@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>In C, permuted</title>
+  <meta name="description" content="Terry Riley's In C, arranged in SuperCollider and running live in the browser: remix the 35 modules' instruments, repeats and levels.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.11.3/p5.min.js"></script>
+  <script type="module" src="js/main.js"></script>
+</head>
+<body>
+  <header class="top">
+    <div class="title">
+      <h1><em>In C</em></h1>
+      <p>Terry Riley, 1964 &middot; arranged in SuperCollider by Alan Tett &middot; live in your browser</p>
+    </div>
+
+    <div class="transport">
+      <button id="play" class="btn btn-play" disabled>
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9-5.5z"/></svg>
+        <span>Play</span>
+      </button>
+      <button id="stop" class="btn" disabled>
+        <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="3.5" width="9" height="9" rx="1"/></svg>
+        <span>Stop</span>
+      </button>
+      <div class="clock">
+        <div id="clock-time" class="clock-time">0:00</div>
+        <div id="clock-sub" class="clock-sub">of 0:00</div>
+      </div>
+    </div>
+
+    <div class="master">
+      <div id="tempo-knob"></div>
+      <div id="master-knob"></div>
+      <label class="toggle" title="A gentle limiter on the master bus, so 35 overlapping voices don't clip.">
+        <input type="checkbox" id="limiter" checked>
+        <span>Limiter</span>
+      </label>
+      <div class="master-meters" id="master-meters" aria-label="Master level"></div>
+    </div>
+  </header>
+
+  <div id="status" class="status" role="status" hidden></div>
+
+  <main>
+    <section class="viz-wrap" aria-label="Visualization">
+      <div id="viz"></div>
+    </section>
+
+    <section class="perm" aria-labelledby="perm-h">
+      <div class="perm-main">
+        <h2 id="perm-h">Permutation</h2>
+        <div class="perm-actions">
+          <button id="permute" class="btn btn-accent">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="12" height="12" rx="3" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="5.5" cy="5.5" r="1.2"/><circle cx="10.5" cy="10.5" r="1.2"/><circle cx="8" cy="8" r="1.2"/></svg>
+            <span>New permutation</span>
+          </button>
+          <button id="reset" class="btn">Score as written</button>
+          <label class="seed">Seed <input id="seed" type="number" min="0" max="999999" inputmode="numeric"></label>
+          <button id="share" class="btn btn-ghost" title="Copy a link that opens this exact version">Copy link</button>
+        </div>
+        <p class="hint">A permutation re-rolls each module's <code>[a, b].choose</code> repeat count, then the knobs push it further from the score. The same seed always gives the same permutation.</p>
+      </div>
+      <div class="perm-knobs" id="perm-knobs"></div>
+    </section>
+
+    <section class="modules" aria-labelledby="mod-h">
+      <div class="modules-head">
+        <h2 id="mod-h">Modules</h2>
+        <p class="hint">Click the timeline to choose where Play starts (the <code>offset</code> in your <code>.scd</code>). Changes apply live.</p>
+      </div>
+      <div class="table" id="table">
+        <div class="row row-head">
+          <div>#</div><div class="c-cell">Phrase</div><div>SynthDef</div><div>Repeats</div><div>Level</div><div class="c-meter">Meter</div><div class="c-btns"></div>
+          <div class="c-lane"><div class="ruler" id="ruler"></div></div>
+        </div>
+        <div id="rows"></div>
+        <div class="playhead" id="playhead" hidden></div>
+        <div class="cue" id="cue"></div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p><strong>How this works.</strong> The score (every <code>Pbind</code>, its repeat counts and the <code>Ptpar</code> entry times) is read straight from <a href="sc/Tett_A_In_C.scd"><code>Tett_A_In_C.scd</code></a> when the page loads. The SynthDefs are compiled from the same file into <code>.scsyndef</code> files and run on <a href="https://github.com/samaaron/supersonic">SuperSonic</a>, which is SuperCollider's own synthesis server compiled to WebAssembly. Nothing is streamed: every sound is synthesized on this computer.</p>
+    <p>For a screen share, tick <em>Share sound</em> in Zoom so the class can hear it. SynthDefs: <em>pluck</em> after John Drumheller's Karplus-Strong example; <em>star</em> from <a href="https://sccode.org/1-522">sccode.org/1-522</a>. Visuals in <a href="https://p5js.org">p5.js</a>.</p>
+  </footer>
+</body>
+</html>
