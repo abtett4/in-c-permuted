@@ -14,6 +14,7 @@ Open the page and press **Play**. For each module you can:
 - **Instrument swap:** chance a module gets a different SynthDef.
 - **Level variance:** how much module levels vary.
 - **Entry drift:** how early or late a module may come in.
+- **Octave range:** how many octaves a module may be transposed. It follows Riley's directions: transposing up is favored, and only modules with long notes (a dotted quarter or longer) may go down. The **Oct** column lets you set any module's octave by hand.
 
 A seed reproduces a permutation exactly, and **Copy link** shares the exact version on screen.
 

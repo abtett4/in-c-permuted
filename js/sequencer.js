@@ -84,10 +84,12 @@ export class Sequencer {
         const ev = m.cell[cur.idx];
         if (!ev.rest && ev.dur > 0) {
           const time = this.timeAt(cur.beat);
+          const shift = 12 * (p.octave || 0);
+          const midinote = Array.isArray(ev.midinote) ? ev.midinote.map(n => n + shift) : ev.midinote + shift;
           this.engine.playNote({
             time,
             instrument: p.instrument,
-            midinote: ev.midinote,
+            midinote,
             dur: ev.dur,
             tempo: this.tempo,
             moduleIndex: i,
@@ -95,7 +97,7 @@ export class Sequencer {
           });
           if (this.onNote) {
             const legato = m.extras.legato ?? 0.8;
-            for (const n of [].concat(ev.midinote)) {
+            for (const n of [].concat(midinote)) {
               this.onNote({ time, end: time + (ev.dur * legato) / this.tempo, midinote: n, module: i, instrument: p.instrument });
             }
           }

@@ -1,7 +1,7 @@
 import { parseScd } from './scd.js';
 import { Engine, MAX_MODULES } from './engine.js';
 import { Sequencer } from './sequencer.js';
-import { DEFAULT_KNOBS, scorePlan, permutePlan, permuteModule, randomSeed, mulberry32, encodeState, decodeState } from './permute.js';
+import { DEFAULT_KNOBS, scorePlan, permutePlan, permuteModule, allowedOctaves, randomSeed, mulberry32, encodeState, decodeState } from './permute.js';
 import { knob, meter, cellPreview, colorFor, dbamp, el, formatTime } from './ui.js';
 import { startViz } from './viz.js';
 
@@ -180,8 +180,10 @@ function buildPermutationPanel() {
     ['shuffle', 'Instrument swap', 0, 1, 0.01, v => `${Math.round(v * 100)}%`, 'Chance that a module is handed to a different SynthDef.'],
     ['variance', 'Level variance', 0, 12, 0.5, v => `±${v.toFixed(1)} dB`, 'How much module levels may vary.'],
     ['drift', 'Entry drift', 0, 8, 0.25, v => `±${v.toFixed(2)} b`, 'How many beats early or late a module may enter.'],
+    ['octaves', 'Octave range', 0, 2, 1, v => (v === 0 ? 'off' : `±${v} oct`), 'How many octaves a module may be transposed. Following Riley, up is favored, and only modules with long notes (a dotted quarter or longer) may go down.'],
   ];
   for (const [key, label, min, max, step, format, title] of defs) {
+    state.knobs[key] ??= DEFAULT_KNOBS[key];
     const k = knob({ label, min, max, step, value: state.knobs[key], format, title: `${title} Applies to the next permutation.`,
       onInput: v => { state.knobs[key] = v; saveHash(); } });
     permKnobs[key] = k;
@@ -236,6 +238,14 @@ function buildRows() {
     for (const name of instruments) select.append(el('option', { value: name }, name));
     select.addEventListener('change', () => { p().instrument = select.value; refresh(); saveHash(); });
 
+    // Any octave you like by hand (within C1–C8); Riley's up/down rule only
+    // governs what the permutation generator picks.
+    const octSelect = el('select', { class: 'inst oct', 'aria-label': `Octave for module ${m.label}`, title: 'Octave transposition' });
+    for (const o of allowedOctaves(m, 2, { rileyRule: false })) {
+      octSelect.append(el('option', { value: o }, o === 0 ? '0' : o > 0 ? `+${o}` : `−${-o}`));
+    }
+    octSelect.addEventListener('change', () => { p().octave = Number(octSelect.value); saveHash(); });
+
     const repsInput = el('input', { type: 'number', min: '1', max: '999', 'aria-label': `Repeats for module ${m.label}` });
     const setReps = n => {
       p().reps = Math.max(1, Math.min(999, Math.round(n) || 1));
@@ -280,7 +290,7 @@ function buildRows() {
     const lane = el('div', { class: 'lane', title: 'Click to start playback here' }, bar);
     lane.addEventListener('click', e => cueTo(beatFromX(e.clientX)));
 
-    const row = el('div', { class: 'row' }, num, cell, select, reps, vol,
+    const row = el('div', { class: 'row' }, num, cell, select, octSelect, reps, vol,
       el('div', { class: 'meter-cell' }, mtr.el), el('div', { class: 'btns' }, mute, solo, dice), lane);
     container.append(row);
 
@@ -289,6 +299,8 @@ function buildRows() {
       if (!instruments.includes(q.instrument)) q.instrument = instruments[0];
       row.style.setProperty('--c', colorFor(q.instrument));
       select.value = q.instrument;
+      q.octave ??= 0;
+      octSelect.value = q.octave;
       repsInput.value = q.reps;
       slider.value = q.gainDb;
       out.textContent = fmtDb(q.gainDb);
@@ -394,7 +406,25 @@ function vizFrame() {
     gains: moduleGains(),
     instruments: [...new Set(state.plan.map(p => p.instrument))],
     colorFor,
+    range: pitchRange(),
   };
+}
+
+// Lowest and highest notes the current plan can play, octaves included.
+function pitchRange() {
+  let lo = Infinity;
+  let hi = -Infinity;
+  model.modules.forEach((m, i) => {
+    const shift = 12 * (state.plan[i].octave || 0);
+    for (const e of m.cell) {
+      if (e.rest) continue;
+      for (const n of [].concat(e.midinote)) {
+        lo = Math.min(lo, n + shift);
+        hi = Math.max(hi, n + shift);
+      }
+    }
+  });
+  return [lo, hi];
 }
 
 // Notes that were scheduled but got cancelled by Stop/Pause/cue.

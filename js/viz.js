@@ -14,8 +14,10 @@ export function startViz(container, getFrame, pitchRange) {
   const TEXT = color('--text-dim');
   const NOW = color('--accent');
 
-  const lo = pitchRange[0] - 3;
-  const hi = pitchRange[1] + 3;
+  // The pitch axis follows f.range (octave transpositions widen it), easing
+  // toward the new range so the roll doesn't jump.
+  let lo = pitchRange[0] - 3;
+  let hi = pitchRange[1] + 3;
 
   return new window.p5(p => {
     let W = container.clientWidth;
@@ -36,6 +38,10 @@ export function startViz(container, getFrame, pitchRange) {
 
     p.draw = () => {
       const f = getFrame();
+      if (f.range) {
+        lo += (f.range[0] - 3 - lo) * 0.08;
+        hi += (f.range[1] + 3 - hi) * 0.08;
+      }
       const nowX = Math.round(W * 0.84);
       const pps = nowX / HISTORY;
       const xOf = t => nowX + (t - f.now) * pps;

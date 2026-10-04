@@ -19,7 +19,7 @@
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --serif: "Instrument Serif", "Iowan Old Style", Georgia, serif;
-  --cols: 48px 100px 128px 104px 164px 84px 88px minmax(200px, 1fr);
+  --cols: 48px 100px 128px 58px 104px 164px 84px 88px minmax(200px, 1fr);
 }
 
 * { box-sizing: border-box; }
@@ -242,7 +242,7 @@ footer strong { color: var(--text); font-weight: 600; }
 }
 
 @media (max-width: 1100px) {
-  :root { --cols: 44px 136px 104px minmax(120px, 1fr) 72px 88px; }
+  :root { --cols: 44px 136px 58px 104px minmax(120px, 1fr) 72px 88px; }
   .c-cell, .cell, .c-lane, .lane, .playhead, .cue { display: none; }
 }
 
@@ -250,7 +250,7 @@ footer strong { color: var(--text); font-weight: 600; }
   .top, main { padding-left: 16px; padding-right: 16px; }
   .status { margin: 12px 16px 0; }
   .modules, .perm { padding: 14px 12px; }
-  :root { --cols: 40px 1fr 96px; }
+  :root { --cols: 40px 1fr 58px 96px; }
   .row { height: auto; padding: 8px 4px; row-gap: 8px; }
   .row-head { display: none; }
   .vol { grid-column: 1 / -1; }
