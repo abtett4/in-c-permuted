@@ -4,12 +4,14 @@ import { Sequencer } from './sequencer.js';
 import { DEFAULT_KNOBS, scorePlan, permutePlan, permuteModule, allowedOctaves, randomSeed, mulberry32, encodeState, decodeState } from './permute.js';
 import { knob, meter, cellPreview, colorFor, dbamp, el, formatTime } from './ui.js';
 import { startViz } from './viz.js';
+import { Recorder } from './recorder.js';
 
 const SCD_PATH = 'sc/Tett_A_In_C.scd';
 const SCORE_SEED = 1964;
 
 const $ = id => document.getElementById(id);
 const engine = new Engine();
+const recorder = new Recorder(engine);
 
 let model;            // parsed .scd: { tempo, modules, synthDefNames }
 let instruments;      // SynthDef names offered in the dropdowns
@@ -43,7 +45,7 @@ async function init() {
   seq = new Sequencer(engine, model.modules, () => state.plan);
   seq.tempo = state.tempo;
   seq.onNote = n => notes.push(n);
-  seq.onEnd = () => { setPlaying(false); };
+  seq.onEnd = () => { setPlaying(false); stopRecording(); };
 
   buildHeader();
   buildPermutationPanel();
@@ -58,10 +60,11 @@ async function init() {
   requestAnimationFrame(frame);
 
   $('play').disabled = false;
-  window.addEventListener('resize', layoutLanes);
+  $('rec').disabled = false;
+  new ResizeObserver(layoutLanes).observe($('table'));
 
   // Handy for poking at things from the browser console.
-  window.inC = { engine, seq, model, get state() { return state; } };
+  window.inC = { engine, seq, recorder, model, get state() { return state; } };
 }
 
 // ---- Header: transport, tempo, master -------------------------------------
@@ -95,6 +98,7 @@ function buildHeader() {
 function bindTransport() {
   $('play').addEventListener('click', () => (seq.playing ? pause() : play()));
   $('stop').addEventListener('click', stop);
+  $('rec').addEventListener('click', () => (recorder.recording ? stopRecording() : startRecording()));
   document.addEventListener('keydown', e => {
     if (e.code !== 'Space' || e.target.closest('input, select, textarea, button, [role=slider]')) return;
     e.preventDefault();
@@ -112,6 +116,7 @@ async function ensureEngine() {
     engine.setMaster(dbamp(state.masterDb));
     engine.setLimiter($('limiter').checked);
     pushGains();
+    pushPans();
     engine.sonic.on('audiocontext:suspended', () => showStatus('The browser paused audio.', true, 'Resume', () => engine.sonic.recover()));
     engine.sonic.on('audiocontext:resumed', () => showStatus(''));
     return true;
@@ -141,6 +146,36 @@ async function stop() {
   await seq.stop();
   cueBeat = 0;
   setPlaying(false);
+  if (recorder.recording) setTimeout(stopRecording, 2000);   // let the last notes ring out
+}
+
+// ---- Recording ----------------------------------------------------------------
+
+async function startRecording() {
+  if (!(await ensureEngine())) return;
+  try {
+    await recorder.start();
+  } catch (err) {
+    showStatus(`Couldn't start recording: ${err.message}`, true);
+    return;
+  }
+  $('rec').classList.add('is-recording');
+  if (!seq.playing) play();
+}
+
+async function stopRecording() {
+  if (!recorder.recording) return;
+  const blob = await recorder.stop();
+  const b = $('rec');
+  b.classList.remove('is-recording');
+  b.querySelector('span').textContent = 'Record';
+  if (!blob) return;
+  const stamp = new Date().toISOString().slice(0, 16).replace(/[T:]/g, '-');
+  const a = el('a', { href: URL.createObjectURL(blob), download: `In C - seed ${state.seed} - ${stamp}.wav` });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 60000);
 }
 
 function setPlaying(on) {
@@ -181,6 +216,7 @@ function buildPermutationPanel() {
     ['variance', 'Level variance', 0, 12, 0.5, v => `±${v.toFixed(1)} dB`, 'How much module levels may vary.'],
     ['drift', 'Entry drift', 0, 8, 0.25, v => `±${v.toFixed(2)} b`, 'How many beats early or late a module may enter.'],
     ['octaves', 'Octave range', 0, 2, 1, v => (v === 0 ? 'off' : `±${v} oct`), 'How many octaves a module may be transposed. Following Riley, up is favored, and only modules with long notes (a dotted quarter or longer) may go down.'],
+    ['pan', 'Pan spread', 0, 1, 0.05, v => (v === 0 ? 'centre' : `±${Math.round(v * 100)}`), 'How far from centre modules may be panned. The pulse stays centred.'],
   ];
   for (const [key, label, min, max, step, format, title] of defs) {
     state.knobs[key] ??= DEFAULT_KNOBS[key];
@@ -220,6 +256,7 @@ function applyPlan(seed, plan) {
   seedInput.value = seed;
   rows.forEach((r, i) => { r.refresh(); seq.resync(i); });
   pushGains();
+  pushPans();
   layoutLanes();
   saveHash();
 }
@@ -267,6 +304,12 @@ function buildRows() {
     slider.addEventListener('dblclick', () => { slider.value = 0; slider.dispatchEvent(new Event('input')); saveHash(); });
     const vol = el('div', { class: 'vol' }, slider, out);
 
+    const panKnob = knob({
+      label: `Pan for module ${m.label}`, min: -1, max: 1, step: 0.05, value: 0, mini: true, bipolar: true,
+      format: fmtPan,
+      onInput: v => { p().pan = v; pushPans(); saveHash(); },
+    });
+
     const mtr = meter({ label: `Module ${m.label} level` });
 
     const mute = el('button', { class: 'mini m', type: 'button', 'aria-pressed': 'false', title: 'Mute' }, 'M');
@@ -281,6 +324,7 @@ function buildRows() {
       refresh();
       seq.resync(i);
       pushGains();
+      pushPans();
       layoutLanes();
       saveHash();
     });
@@ -290,7 +334,7 @@ function buildRows() {
     const lane = el('div', { class: 'lane', title: 'Click to start playback here' }, bar);
     lane.addEventListener('click', e => cueTo(beatFromX(e.clientX)));
 
-    const row = el('div', { class: 'row' }, num, cell, select, octSelect, reps, vol,
+    const row = el('div', { class: 'row' }, num, cell, select, octSelect, reps, vol, panKnob.el,
       el('div', { class: 'meter-cell' }, mtr.el), el('div', { class: 'btns' }, mute, solo, dice), lane);
     container.append(row);
 
@@ -301,6 +345,8 @@ function buildRows() {
       select.value = q.instrument;
       q.octave ??= 0;
       octSelect.value = q.octave;
+      q.pan ??= 0;
+      panKnob.set(q.pan, false);
       repsInput.value = q.reps;
       slider.value = q.gainDb;
       out.textContent = fmtDb(q.gainDb);
@@ -315,6 +361,13 @@ function buildRows() {
 }
 
 const fmtDb = db => `${db > 0 ? '+' : ''}${db.toFixed(1)} dB`;
+const fmtPan = v => (Math.abs(v) < 0.025 ? 'centre' : `${v < 0 ? 'L' : 'R'} ${Math.round(Math.abs(v) * 100)}`);
+
+function pushPans() {
+  const pans = new Array(MAX_MODULES).fill(0);
+  state.plan.forEach((p, i) => { pans[i] = p.pan || 0; });
+  engine.setPans(pans);
+}
 
 function moduleGains() {
   const anySolo = state.plan.some(p => p.solo);
@@ -347,7 +400,8 @@ function layoutLanes() {
   const ruler = $('ruler');
   ruler.replaceChildren();
   const secs = totalBeats / state.tempo;
-  const step = secs > 900 ? 120 : secs > 360 ? 60 : 30;
+  const px = ruler.getBoundingClientRect().width || 1;
+  const step = [15, 30, 60, 120, 300, 600].find(s => (s / secs) * px >= 44) ?? 600;
   for (let s = 0; s <= secs; s += step) {
     ruler.append(el('span', { style: `left:${((s * state.tempo) / totalBeats) * 100}%` }, formatTime(s)));
   }
@@ -384,6 +438,11 @@ function frame() {
   });
   masterMeters[0].update(levels[MAX_MODULES] || 0, now);
   masterMeters[1].update(levels[MAX_MODULES + 1] || 0, now);
+
+  if (recorder.recording) {
+    const mb = (recorder.frames * 4) / 1e6;
+    $('rec').querySelector('span').textContent = `${formatTime(recorder.seconds)} · ${mb.toFixed(0)} MB`;
+  }
 
   if (seq.playing) placeLine($('playhead'), beat);
   placeLine($('cue'), cueBeat);

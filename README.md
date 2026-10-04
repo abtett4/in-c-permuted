@@ -15,6 +15,9 @@ Open the page and press **Play**. For each module you can:
 - **Level variance:** how much module levels vary.
 - **Entry drift:** how early or late a module may come in.
 - **Octave range:** how many octaves a module may be transposed. It follows Riley's directions: transposing up is favored, and only modules with long notes (a dotted quarter or longer) may go down. The **Oct** column lets you set any module's octave by hand.
+- **Pan spread:** how far from center modules may be panned (the pulse stays centered). Each row also has its own pan knob. Panning happens in the mixer, so it works the same on every SynthDef.
+
+**Record** saves what you hear (after the mixer, master level and limiter) as a 16-bit stereo WAV. It starts playback if needed. Press it again, or Stop, to finish, and the file downloads. A WAV takes about 11.5 MB per minute.
 
 A seed reproduces a permutation exactly, and **Copy link** shares the exact version on screen.
 
@@ -30,6 +33,7 @@ A seed reproduces a permutation exactly, and **Copy link** shares the exact vers
 | `js/sequencer.js` | Plays the form like `Ptpar` + `Ppar` + `Pseq` on a `TempoClock`. |
 | `js/permute.js` | Seeded permutations and shareable links. |
 | `js/viz.js` | The p5.js visualization. |
+| `js/recorder.js` | The Record button: captures the master output to WAV. |
 
 One change from the original SynthDefs: `pluck` gained an `out` argument (it wrote straight to bus 0), so it can go through the mixer like the others.
 

@@ -131,13 +131,26 @@ defs.add(SynthDef("harpsichord1", {
 
 // ---- Web-only: the mixer -------------------------------------------------
 // Every module plays into its own stereo bus (firstBus + 2*index). This synth
-// applies each module's fader, sums them, applies the master level and an
-// optional safety limiter, and reports peak levels back to the page 20x a
+// applies each module's fader and pan, sums them, applies the master level and
+// an optional safety limiter, and reports peak levels back to the page 20x a
 // second for the dB meters. 53 slots, so all of Riley's modules fit.
+//
+// The pan keeps a SynthDef's own stereo image when centred (left stays left,
+// right stays right) and folds both channels toward a side as it turns, so it
+// works the same on every SynthDef, whatever it does with its own `pan` arg.
+// Folding a centred (mono) sound to one side adds its two channels together,
+// so the level is trimmed by up to 3 dB as the pan moves out, keeping its
+// loudness steady.
 defs.add(SynthDef(\inc_mixer, { |firstBus = 64, out = 0, master = 0.8, limit = 1|
 	var n = 53;
 	var gains = \gains.kr(1 ! n, 0.05);
-	var chans = n.collect { |i| In.ar(firstBus + (i * 2), 2) * gains[i] };
+	var pans = \pans.kr(0 ! n, 0.05);
+	var chans = n.collect { |i|
+		var c = In.ar(firstBus + (i * 2), 2) * gains[i];
+		var width = 1 - pans[i].abs;
+		var trim = 1 - (0.2929 * pans[i].abs);
+		(Pan2.ar(c[0], (pans[i] - width).clip(-1, 1)) + Pan2.ar(c[1], (pans[i] + width).clip(-1, 1))) * trim
+	};
 	var levels = chans.collect { |c| Amplitude.kr(c, 0.002, 0.25).reduce(\max) };
 	var mix = chans.sum * master.lag(0.05);
 	var sig = Select.ar(limit, [mix, Limiter.ar(mix, 0.95, 0.01)]);

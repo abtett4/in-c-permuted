@@ -12,6 +12,7 @@ export const DEFAULT_KNOBS = {
   variance: 4,      // ± dB
   drift: 2,         // ± beats on each entry
   octaves: 1,       // how many octaves a module may be transposed
+  pan: 0.6,         // how far from centre a module may be panned (0..1)
 };
 
 // "It is OK to transpose patterns by an octave, especially to transpose up.
@@ -80,6 +81,7 @@ export function scorePlan(modules, seed) {
     gainDb: 0,
     start: m.start,
     octave: 0,
+    pan: 0,
     mute: false,
     solo: false,
   }));
@@ -97,7 +99,9 @@ export function permuteModule(m, instruments, knobs, rand) {
     ? 0
     : Math.max(0, Math.round((m.start + (rand() * 2 - 1) * knobs.drift) * 8) / 8);
   const octave = pickOctave(m, knobs.octaves ?? 0, rand);
-  return { instrument, reps: Math.max(1, Math.round(base * factor)), gainDb, start, octave };
+  // The pulse stays centred.
+  const pan = m.start === 0 ? 0 : Math.round((rand() * 2 - 1) * (knobs.pan ?? 0) * 20) / 20;
+  return { instrument, reps: Math.max(1, Math.round(base * factor)), gainDb, start, octave, pan };
 }
 
 export function permutePlan(modules, instruments, knobs, seed) {
@@ -109,12 +113,12 @@ export function permutePlan(modules, instruments, knobs, seed) {
 
 export function encodeState(state) {
   const compact = {
-    v: 2,
+    v: 3,
     s: state.seed,
-    k: [state.knobs.spread, state.knobs.shuffle, state.knobs.variance, state.knobs.drift, state.knobs.octaves],
+    k: [state.knobs.spread, state.knobs.shuffle, state.knobs.variance, state.knobs.drift, state.knobs.octaves, state.knobs.pan],
     t: state.tempo,
     g: state.masterDb,
-    m: state.plan.map(p => [p.instrument, p.reps, p.gainDb, p.start, (p.mute ? 1 : 0) | (p.solo ? 2 : 0), p.octave]),
+    m: state.plan.map(p => [p.instrument, p.reps, p.gainDb, p.start, (p.mute ? 1 : 0) | (p.solo ? 2 : 0), p.octave, p.pan]),
   };
   return btoa(JSON.stringify(compact)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
@@ -122,15 +126,18 @@ export function encodeState(state) {
 export function decodeState(str, modules) {
   try {
     const json = JSON.parse(atob(str.replace(/-/g, '+').replace(/_/g, '/')));
-    // v1 links (before octaves) still open, with everything at octave 0.
-    if (![1, 2].includes(json.v) || !Array.isArray(json.m) || json.m.length !== modules.length) return null;
+    // Older links (before octaves and pan) still open, at octave 0 and centred.
+    if (![1, 2, 3].includes(json.v) || !Array.isArray(json.m) || json.m.length !== modules.length) return null;
     return {
       seed: json.s,
-      knobs: { spread: json.k[0], shuffle: json.k[1], variance: json.k[2], drift: json.k[3], octaves: json.k[4] ?? DEFAULT_KNOBS.octaves },
+      knobs: {
+        spread: json.k[0], shuffle: json.k[1], variance: json.k[2], drift: json.k[3],
+        octaves: json.k[4] ?? DEFAULT_KNOBS.octaves, pan: json.k[5] ?? DEFAULT_KNOBS.pan,
+      },
       tempo: json.t,
       masterDb: json.g,
-      plan: json.m.map(([instrument, reps, gainDb, start, flags, octave = 0]) => ({
-        instrument, reps, gainDb, start, octave, mute: !!(flags & 1), solo: !!(flags & 2),
+      plan: json.m.map(([instrument, reps, gainDb, start, flags, octave = 0, pan = 0]) => ({
+        instrument, reps, gainDb, start, octave, pan, mute: !!(flags & 1), solo: !!(flags & 2),
       })),
     };
   } catch {

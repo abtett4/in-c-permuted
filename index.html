@@ -28,6 +28,10 @@
         <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="3.5" width="9" height="9" rx="1"/></svg>
         <span>Stop</span>
       </button>
+      <button id="rec" class="btn btn-rec" title="Record the performance to a WAV file. Starts playback if it isn't running; press again (or Stop) to finish and save." disabled>
+        <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5"/></svg>
+        <span>Record</span>
+      </button>
       <div class="clock">
         <div id="clock-time" class="clock-time">0:00</div>
         <div id="clock-sub" class="clock-sub">of 0:00</div>
@@ -76,7 +80,7 @@
       </div>
       <div class="table" id="table">
         <div class="row row-head">
-          <div>#</div><div class="c-cell">Phrase</div><div>SynthDef</div><div>Oct</div><div>Repeats</div><div>Level</div><div class="c-meter">Meter</div><div class="c-btns"></div>
+          <div>#</div><div class="c-cell">Phrase</div><div>SynthDef</div><div>Oct</div><div>Repeats</div><div>Level</div><div>Pan</div><div class="c-meter">Meter</div><div class="c-btns"></div>
           <div class="c-lane"><div class="ruler" id="ruler"></div></div>
         </div>
         <div id="rows"></div>

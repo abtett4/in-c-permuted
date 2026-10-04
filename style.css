@@ -19,7 +19,7 @@
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --serif: "Instrument Serif", "Iowan Old Style", Georgia, serif;
-  --cols: 48px 100px 128px 58px 104px 164px 84px 88px minmax(200px, 1fr);
+  --cols: 48px 100px 128px 58px 104px 164px 34px 84px 88px minmax(200px, 1fr);
 }
 
 * { box-sizing: border-box; }
@@ -95,6 +95,11 @@ h2 { font: 400 1.6rem/1 var(--serif); margin: 0; letter-spacing: 0.01em; }
 .btn-play { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 650; padding: 0 18px; }
 .btn-play:hover:not(:disabled) { background: #ffd36b; border-color: #ffd36b; }
 .btn-play.is-playing, .btn-play.is-playing:hover:not(:disabled) { background: var(--panel-2); color: var(--accent); border-color: color-mix(in srgb, var(--accent) 55%, var(--line-2)); }
+.btn-rec svg { fill: var(--meter-hi); }
+.btn-rec.is-recording { background: var(--meter-hi); border-color: var(--meter-hi); color: #2a0b0b; font-variant-numeric: tabular-nums; }
+.btn-rec.is-recording svg { fill: #2a0b0b; animation: rec-blink 1s steps(2, start) infinite; }
+@keyframes rec-blink { to { visibility: hidden; } }
+@media (prefers-reduced-motion: reduce) { .btn-rec.is-recording svg { animation: none; } }
 .btn-accent { border-color: color-mix(in srgb, var(--accent) 55%, var(--line-2)); color: var(--accent); }
 .btn-ghost { background: transparent; }
 
@@ -138,6 +143,9 @@ main { padding: 18px 24px 8px; display: grid; grid-template-columns: minmax(0, 1
 .knob-arc { fill: none; stroke: var(--accent); stroke-width: 4; stroke-linecap: round; }
 .knob-cap { fill: var(--panel-2); stroke: var(--line-2); }
 .knob-ptr { stroke: var(--text); stroke-width: 2; stroke-linecap: round; }
+.knob-mini { width: auto; }
+.knob-mini .knob-dial { width: 28px; height: 28px; }
+.knob-mini .knob-track, .knob-mini .knob-arc { stroke-width: 5; }
 .knob-val { font: 600 12px/1 var(--mono); margin-top: 5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .knob-label { font-size: 11px; color: var(--text-dim); margin-top: 3px; text-align: center; white-space: nowrap; }
 
@@ -242,7 +250,7 @@ footer strong { color: var(--text); font-weight: 600; }
 }
 
 @media (max-width: 1100px) {
-  :root { --cols: 44px 136px 58px 104px minmax(120px, 1fr) 72px 88px; }
+  :root { --cols: 44px 136px 58px 104px minmax(120px, 1fr) 34px 72px 88px; }
   .c-cell, .cell, .c-lane, .lane, .playhead, .cue { display: none; }
 }
 

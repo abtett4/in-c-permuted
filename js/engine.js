@@ -21,6 +21,7 @@ export class Engine {
     this.defs = {};          // name -> { controls: Set }
     this.onLevels = null;    // (Float32 array of module peaks, [L, R] master) => void
     this.gains = new Array(MAX_MODULES).fill(1);
+    this.pans = new Array(MAX_MODULES).fill(0);
   }
 
   get ready() { return !!this.sonic; }
@@ -76,6 +77,7 @@ export class Engine {
     this.sonic.send('/g_new', MIXER_GROUP, 3, SYNTH_GROUP);
     this.sonic.send('/s_new', 'inc_mixer', MIXER_NODE, 0, MIXER_GROUP, 'firstBus', FIRST_BUS);
     this.setGains(this.gains);
+    this.setPans(this.pans);
     onStatus('');
     return { instruments: Object.keys(this.defs).filter(n => n !== 'inc_mixer'), failed };
   }
@@ -118,6 +120,12 @@ export class Engine {
   setGains(gains) {
     this.gains = gains;
     if (this.sonic) this.sonic.send('/n_setn', MIXER_NODE, 'gains', MAX_MODULES, ...gains);
+  }
+
+  // -1 (left) .. 1 (right), one per module.
+  setPans(pans) {
+    this.pans = pans;
+    if (this.sonic) this.sonic.send('/n_setn', MIXER_NODE, 'pans', MAX_MODULES, ...pans);
   }
 
   setMaster(amp) {

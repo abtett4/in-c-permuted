@@ -29,7 +29,9 @@ export function el(tag, attrs = {}, ...children) {
 
 const SWEEP = 270;
 
-export function knob({ label, min, max, value, step = 0.01, format = String, onInput, title }) {
+// `mini` draws a small dial with no label or readout; the value shows in its
+// tooltip instead (for the per-module rows).
+export function knob({ label, min, max, value, step = 0.01, format = String, onInput, title, mini = false, bipolar = false }) {
   const def = value;
   const dial = el('div', {
     class: 'knob-dial', role: 'slider', tabindex: '0', 'aria-label': label,
@@ -42,7 +44,9 @@ export function knob({ label, min, max, value, step = 0.01, format = String, onI
       <line class="knob-ptr" x1="24" y1="24" x2="24" y2="14"/>
     </svg>`;
   const out = el('div', { class: 'knob-val' });
-  const root = el('div', { class: 'knob' }, dial, out, el('div', { class: 'knob-label' }, label));
+  const root = mini
+    ? el('div', { class: 'knob knob-mini' }, dial)
+    : el('div', { class: 'knob' }, dial, out, el('div', { class: 'knob-label' }, label));
   const arc = dial.querySelector('.knob-arc');
   const ptr = dial.querySelector('.knob-ptr');
 
@@ -51,11 +55,13 @@ export function knob({ label, min, max, value, step = 0.01, format = String, onI
     nv = Math.min(max, Math.max(min, Math.round(nv / step) * step));
     v = nv;
     const f = (v - min) / (max - min);
-    arc.setAttribute('d', f > 0.001 ? arcPath(0, f) : '');
+    const [a0, a1] = bipolar ? [Math.min(0.5, f), Math.max(0.5, f)] : [0, f];
+    arc.setAttribute('d', a1 - a0 > 0.001 ? arcPath(a0, a1) : '');
     ptr.setAttribute('transform', `rotate(${-SWEEP / 2 + f * SWEEP} 24 24)`);
     out.textContent = format(v);
     dial.setAttribute('aria-valuenow', v);
     dial.setAttribute('aria-valuetext', format(v));
+    if (mini) dial.title = `${label}: ${format(v)}. Drag, scroll or use arrow keys; double-click to reset.`;
     if (emit && onInput) onInput(v);
   };
   set(value, false);
