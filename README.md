@@ -1,6 +1,6 @@
 # In C, permuted
 
-Terry Riley's *In C*, as arranged in SuperCollider by Alan Tett (MUSC 4121, Spring 2019), running live in the browser. Every sound is synthesized by SuperCollider's own server, **scsynth**, compiled to WebAssembly ([SuperSonic](https://github.com/samaaron/supersonic)). Nothing is streamed and nothing has to run on another machine.
+Terry Riley's *In C*, as arranged in SuperCollider by Alan Tett (MUSC 4121, Spring 2019 & ATLS 5660, Fall 2026), running live in the browser. Every sound is synthesized by SuperCollider's own server, **scsynth**, compiled to WebAssembly ([SuperSonic](https://github.com/samaaron/supersonic)). Nothing is streamed and nothing has to run on another machine. Most of the implementation was written by Claude Code, vibe-coded by Alan Tett.
 
 Open the page and press **Play**. For each module you can:
 
