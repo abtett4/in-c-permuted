@@ -66,7 +66,12 @@ async function init() {
   state = saved && saved.mode === mode ? { ...saved, mode } : {
     mode,
     seed: SCORE_SEED,
-    knobs: { ...DEFAULT_KNOBS },
+    // Riley mode's octave range and pan spread default to the .scd's.
+    knobs: {
+      ...DEFAULT_KNOBS,
+      ...(model.riley && model.riley.octRange != null ? { octaves: model.riley.octRange } : {}),
+      ...(model.riley && model.riley.panSpread != null ? { pan: model.riley.panSpread } : {}),
+    },
     tempo: model.tempo,
     masterDb: -3,
     plan: scorePlan(modules, SCORE_SEED),
@@ -140,8 +145,8 @@ function scoreRiley(seed) {
     maxStay: r.maxStay,
     maxLead: r.maxLead,
     entrySpread: r.entrySpread,
-    // As written: everyone in the module's own octave.
-    players: rileyPlayers(r.nPlayers, pool.length ? pool : instruments, seed).map(p => ({ ...p, oct: 0 })),
+    // As written in the .scd: its `octaves` (\vary or a number) and its pan spread.
+    players: rileyPlayers(r.nPlayers, pool.length ? pool : instruments, seed, r.panSpread ?? DEFAULT_KNOBS.pan).map(p => ({ ...p, oct: r.octaves })),
   };
 }
 
@@ -155,11 +160,13 @@ function rileyPool() {
 let tempoKnob, masterKnob, seedInput;
 
 function buildHeader() {
+  // The knob shows quarter-note BPM. The .scd counts durations in whole notes,
+  // so its TempoClock tempo (whole notes per second) is BPM / 240.
   tempoKnob = knob({
-    label: 'Tempo', min: 0.15, max: 1, step: 0.01, value: state.tempo,
-    format: v => `${v.toFixed(2)} b/s`,
-    title: `TempoClock tempo, in beats per second (the score says ${model.tempo}). Drag, scroll or use arrow keys; double-click to reset.`,
-    onInput: v => { state.tempo = v; seq.setTempo(v); layoutLanes(); saveHash(); },
+    label: 'Tempo', min: 40, max: 240, step: 1, value: Math.round(state.tempo * 240),
+    format: v => `${v} BPM`,
+    title: `Quarter-note beats per minute (the score says ${Math.round(model.tempo * 240)}; TempoClock(${+model.tempo.toFixed(4)})). Drag, scroll or use arrow keys; double-click to reset.`,
+    onInput: v => { state.tempo = v / 240; seq.setTempo(state.tempo); layoutLanes(); saveHash(); },
   });
   $('tempo-knob').replaceWith(tempoKnob.el);
 

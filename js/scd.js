@@ -16,12 +16,13 @@ export function synthDefNamesIn(src) {
   return namesFromTokens(tokenize(stripComments(src)));
 }
 
+// Names starting inc_ are machinery (the per-player panner), not instruments.
 function namesFromTokens(tokens) {
   const names = [];
   for (let i = 0; i < tokens.length - 2; i++) {
     if (tokens[i].v === 'SynthDef' && tokens[i + 1].v === '(') {
       const t = tokens[i + 2];
-      if ((t.type === 'symbol' || t.type === 'string') && !names.includes(t.v)) names.push(t.v);
+      if ((t.type === 'symbol' || t.type === 'string') && !names.includes(t.v) && !t.v.startsWith('inc_')) names.push(t.v);
     }
   }
   return names;
@@ -171,6 +172,11 @@ function readRiley(ppar, env, warnings) {
     // Players come in one at a time over this many seconds (`var entrySpread`
     // in the .scd); without it, everyone starts together.
     entrySpread: typeof env.entrySpread === 'number' ? env.entrySpread : 0,
+    // Players' octaves (`octaves = \vary` or a number), how far "vary" may go
+    // (`octRange`), and how wide the players are spread (`panSpread`).
+    octaves: env.octaves && env.octaves.sym === 'vary' ? 'vary' : typeof env.octaves === 'number' ? env.octaves : 0,
+    octRange: typeof env.octRange === 'number' ? env.octRange : null,
+    panSpread: typeof env.panSpread === 'number' ? env.panSpread : null,
     hasPulse: !!(pulsePbind && pulsePbind.type === 'Pbind'),
     modules: labelModules(modules),
   };

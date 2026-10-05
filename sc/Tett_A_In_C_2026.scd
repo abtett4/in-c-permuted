@@ -261,6 +261,20 @@ SynthDef(\burst, { |out, amp = 0.1, freq = 440, oct = 1|
 	Out.ar(out, (snd * amp) ! 2);
 }).add;
 
+// Not an instrument: Riley mode gives each player its own bus and one of these
+// to place it in the stereo field (the SynthDefs handle `pan` differently, and
+// some ignore it). It keeps a SynthDef's own stereo image when centred and
+// folds both channels toward a side as it turns, trimming up to 3 dB so the
+// loudness stays steady. The web page uses the same SynthDef (names starting
+// inc_ are left out of the instrument lists).
+SynthDef(\inc_pan, { |in = 256, out = 0, pan = 0|
+	var c = In.ar(in, 2);
+	var p = pan.lag(0.05);
+	var width = 1 - p.abs;
+	var trim = 1 - (0.2929 * p.abs);
+	Out.ar(out, (Pan2.ar(c[0], (p - width).clip(-1, 1)) + Pan2.ar(c[1], (p + width).clip(-1, 1))) * trim);
+}).add;
+
 )
 
 
@@ -268,7 +282,7 @@ SynthDef(\burst, { |out, amp = 0.1, freq = 440, oct = 1|
 
 // Set up the 53 modules each with a bounded-random repeat number and the player variables
 (
-var song0, song1, song2, song3, song4, song5, song6, song7, song8, song9, song10, song11, song12, song13, song14, song15, song16, song17, song18, song19, song20, song21, song22, song23, song24, song25, song26, song27, song28, song29, song30, song31, song32, song33, song34, song35, song36, song37, song38, song39, song40, song41, song42, song43, song44, song45, song46, song47, song48, song49, song50, song51, song52, song53, offset, modules, nPlayers = 8, pos, tempo = 0.39, player, pulse, finished = 0, entrySpread = 15, entries;
+var song0, song1, song2, song3, song4, song5, song6, song7, song8, song9, song10, song11, song12, song13, song14, song15, song16, song17, song18, song19, song20, song21, song22, song23, song24, song25, song26, song27, song28, song29, song30, song31, song32, song33, song34, song35, song36, song37, song38, song39, song40, song41, song42, song43, song44, song45, song46, song47, song48, song49, song50, song51, song52, song53, offset, modules, nPlayers = 8, pos, bpm = 120, tempo = bpm / 240, player, pulse, finished = 0, entrySpread = 15, entries, octaves = \vary, octRange = 1, panSpread = 0.6, octFor, playerBus, playerPans, panners;
 
 song0 = Pbind(
     \instrument, \harpsichord1,
@@ -793,9 +807,29 @@ Ptpar([
 
 // Claude Code's "Riley Mode" where each player repeats a module for 8-16 s (a ~10-minute performance), waits if they get 5 modules ahead of the slowest player, and waits at module 53 until everyone has arrived
 // Players come in one at a time over the first entrySpread seconds, and \bass is kept in the low register
+// Each player has its own place in the stereo field (spread over +/- panSpread) and, with octaves = \vary,
+// picks its own octave for each module (Riley: "It is OK to transpose patterns by an octave, especially to
+// transpose up. Transposing down by octaves works best on the patterns containing notes of long durations.")
+// Set octaves to a number (e.g. 0) to keep every player in that octave throughout.
+// Tempo: the durations count whole notes (1/4 is a quarter note), so a TempoClock beat is a whole note and
+// tempo = bpm / 240 turns quarter-note BPM into whole notes per second. (0.39 was about 94 BPM.)
 
 modules = [song1, song2, song3, song4, song5, song6, song7, song8, song9, song10, song11, song12, song13, song14, song15, song16, song17, song18, song19, song20, song21, song22, song23, song24, song25, song26, song27, song28, song29, song30, song31, song32, song33, song34, song35, song36, song37, song38, song39, song40, song41, song42, song43, song44, song45, song46, song47, song48, song49, song50, song51, song52, song53].collect { |pb| pb.patternpairs[3].list };
 pos = inf ! nPlayers;   // which module each player is on (inf until they come in, so late players don't hold others back)
+
+// A player's octave for one module: up is favoured (stay 3 : up 2 : down 1),
+// down only if the module has a note a dotted quarter or longer, within
+// +/- octRange, and keeping every note between C1 and C8. Same rule as the web
+// page (js/permute.js).
+octFor = { |cell|
+    var notes = cell.reject { |e| e[1].isRest }.collect { |e| e[0] };
+    var long = cell.any { |e| e[1].isRest.not and: { e[1] >= (3/8) } };
+    var opts = (octRange.neg..octRange).select { |o|
+        (o >= 0 or: { long }) and: { notes.minItem + (12 * o) >= 24 } and: { notes.maxItem + (12 * o) <= 108 }
+    };
+    var weights = opts.collect { |o| case { o == 0 } { 3 } { o > 0 } { 2 } { 1 } };
+    if (opts.isEmpty) { 0 } { opts.wchoose(weights.normalizeSum) }
+};
 
 player = { |p, instrument|
     Prout({ |ev|
@@ -803,7 +837,8 @@ player = { |p, instrument|
         modules.do { |cell, i|
             var beats = cell.sum { |e| e[1].value };
             var reps = (rrand(8, 16) * tempo / beats).round.max(1);  // 8-16 s per module, for a ~10-minute performance (Riley suggests 45-90 s)
-            var notes = cell.reject { |e| e[1].isRest }.collect { |e| e[0] };
+            var oct = if (octaves == \vary) { octFor.(cell) } { octaves };
+            var notes = cell.reject { |e| e[1].isRest }.collect { |e| e[0] + (12 * oct) };
             var shift = 0;
             // Keep \bass low (E1-E3, MIDI 28-52) by moving the whole module by
             // octaves, so its melody keeps its shape. Same rule as js/registers.js.
@@ -817,7 +852,9 @@ player = { |p, instrument|
                 or: { i - pos.minItem >= 5 }                                   // don't race ahead
                 or: { (i == (modules.size - 1)) and: { pos.minItem < i } }     // wait at 53
             } {
-                ev = Pbind(\instrument, instrument, [\midinote, \dur], Pseq(cell.collect { |e| [e[0] - shift, e[1]] }, 1)).embedInStream(ev);
+                // \out and \outbus send the notes to this player's own bus (bass uses outbus).
+                ev = Pbind(\instrument, instrument, \out, playerBus[p].index, \outbus, playerBus[p].index,
+                    [\midinote, \dur], Pseq(cell.collect { |e| [e[0] + (12 * oct) - shift, e[1]] }, 1)).embedInStream(ev);
                 reps = reps - 1;
             };
         };
@@ -832,6 +869,12 @@ pulse = Pbind(\instrument, \harpsichord1, \midinote, 84, \dur, Pwhile({ finished
 // entrySpread seconds and on the eighth-note pulse, so module 1 builds up as a
 // canon. Set entrySpread = 0 to start everyone together.
 entries = nPlayers.collect { |k| (k * entrySpread * tempo / (nPlayers - 1).max(1)).round(1/8) }.scramble;
+
+// Each player plays into its own bus, panned by an inc_pan at the end of the
+// node tree: places spread evenly over +/- panSpread, handed out at random.
+playerBus = nPlayers.collect { Bus.audio(s, 2) };
+playerPans = nPlayers.collect { |k| if (nPlayers > 1) { (k / (nPlayers - 1) * 2 - 1) * panSpread } { 0 } }.scramble;
+panners = nPlayers.collect { |p| Synth.tail(s, \inc_pan, [\in, playerBus[p].index, \out, 0, \pan, playerPans[p]]) };
 
 Ppar([pulse] ++ nPlayers.collect { |p| player.(p, [\pluck, \star, \starlet, \harpsichord1, \bass, \ff, \click, \burst, \highlong, \highshort, \envsine, \midsine
 ].choose) })

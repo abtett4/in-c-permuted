@@ -105,17 +105,8 @@ strip = SynthDef(\inc_strip, { |firstBus = 64, out = 60|
 strip.writeDefFile(dir);
 "wrote inc_strip".postln;
 
-// Riley mode pans each player rather than each module: a player's notes go
-// through its own inc_pan on the way to the bus of whatever module it's on.
-// Same stereo-preserving pan and loudness trim as the strips.
-SynthDef(\inc_pan, { |in = 256, out = 64, pan = 0|
-	var c = In.ar(in, 2);
-	var p = pan.lag(0.05);
-	var width = 1 - p.abs;
-	var trim = 1 - (0.2929 * p.abs);
-	Out.ar(out, (Pan2.ar(c[0], (p - width).clip(-1, 1)) + Pan2.ar(c[1], (p + width).clip(-1, 1))) * trim);
-}).writeDefFile(dir);
-"wrote inc_pan".postln;
+// (inc_pan, the per-player panner, is in Tett_A_In_C_2026.scd's SynthDef
+// block, since SuperCollider's own Riley mode uses it too.)
 
 master = SynthDef(\inc_master, { |in = 60, out = 0, master = 0.8, limit = 1|
 	var mix = In.ar(in, 2) * master.lag(0.05);
