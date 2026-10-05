@@ -291,11 +291,13 @@ footer strong { color: var(--text); font-weight: 600; }
 @media (max-width: 640px) {
   .top, main { padding-left: 16px; padding-right: 16px; }
   .status { margin: 12px 16px 0; }
-  .modules, .perm { padding: 14px 12px; }
+  .modules, .perm, .players { padding: 14px 12px; }
+  /* Each row becomes two lines: the controls, then the level slider. */
   :root { --cols: 40px 1fr 58px 96px; }
+  .table.is-riley { --cols: 40px 58px 34px 1fr auto; }
   .row { height: auto; padding: 8px 4px; row-gap: 8px; }
   .row-head { display: none; }
-  .vol { grid-column: 1 / -1; }
-  .c-meter, .meter-cell { grid-column: 1 / 3; }
+  .row > .vol { grid-column: 1 / -1; order: 1; }
+  .table:not(.is-riley) .row > .btns { grid-column: span 2; }
   footer { padding: 6px 16px 32px; }
 }

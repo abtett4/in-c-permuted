@@ -648,8 +648,11 @@ function frameRiley(beat) {
 
   $('clock-time').textContent = formatTime(beat / state.tempo);
   const active = where.filter(r => r != null).map(r => Number(modules[r].label));
+  const lo = Math.min(...active);
+  const hi = Math.max(...active);
   $('clock-sub').textContent = !where.length ? 'Riley mode'
-    : active.length ? `modules ${Math.min(...active)}–${Math.max(...active)}` : 'all players done';
+    : !active.length ? 'all players done'
+    : lo === hi ? `everyone on module ${lo}` : `modules ${lo}–${hi}`;
 }
 
 function vizFrame() {

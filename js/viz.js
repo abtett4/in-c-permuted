@@ -34,7 +34,22 @@ export function startViz(container, getFrame, pitchRange) {
       p.resizeCanvas(W, HEIGHT);
     };
 
-    const yOf = n => p.map(n, lo, hi, HEIGHT - 18, 18);
+    let top = 18;   // grows when the legend wraps, so it never covers notes
+    const yOf = n => p.map(n, lo, hi, HEIGHT - 18, top);
+
+    // The legend, wrapping onto more lines before it reaches the "now" line.
+    const legendLayout = (names, nowX) => {
+      const items = [];
+      let x = 44;
+      let y = 10;
+      for (const name of names) {
+        const w = p.textWidth(name) + 34;
+        if (x > 44 && x + w > nowX - 12) { x = 44; y += 17; }
+        items.push({ name, x, y });
+        x += w;
+      }
+      return { items, lines: items.length ? (y - 10) / 17 + 1 : 0 };
+    };
 
     p.draw = () => {
       const f = getFrame();
@@ -45,6 +60,10 @@ export function startViz(container, getFrame, pitchRange) {
       const nowX = Math.round(W * 0.84);
       const pps = nowX / HISTORY;
       const xOf = t => nowX + (t - f.now) * pps;
+
+      p.textSize(11);
+      const legendLines = legendLayout(f.instruments, nowX).lines;
+      top = 18 + 17 * legendLines;
 
       p.background(BG);
 
@@ -85,7 +104,8 @@ export function startViz(container, getFrame, pitchRange) {
         const c = p.color(f.colorFor(n.instrument));
         const live = f.now >= n.time && f.now <= n.end;
         const quiet = f.gains[n.module] === 0;
-        if (live) sounding.add(n.module);
+        // Count a module as sounding through the short gaps between its notes.
+        if (f.now >= n.time && f.now <= n.end + 0.3) sounding.add(n.module);
 
         if (!n.fired && f.now >= n.time) {
           n.fired = true;
@@ -135,17 +155,15 @@ export function startViz(container, getFrame, pitchRange) {
       p.noStroke();
       p.textAlign(p.LEFT, p.TOP);
       p.textSize(11);
-      let lx = 44;
-      for (const name of f.instruments) {
+      for (const { name, x, y } of legendLayout(f.instruments, nowX).items) {
         p.fill(f.colorFor(name));
-        p.rect(lx, 11, 10, 10, 2);
+        p.rect(x, y + 1, 10, 10, 2);
         p.fill(TEXT);
-        p.text(name, lx + 15, 10);
-        lx += p.textWidth(name) + 34;
+        p.text(name, x + 15, y);
       }
-      p.textAlign(p.RIGHT, p.TOP);
+      p.textAlign(p.RIGHT, p.BOTTOM);
       p.fill(TEXT);
-      if (f.playing) p.text(`${sounding.size} module${sounding.size === 1 ? '' : 's'} sounding`, nowX - 8, 10);
+      if (f.playing) p.text(`${sounding.size} module${sounding.size === 1 ? '' : 's'} sounding`, nowX - 8, HEIGHT - 14);
 
       if (!f.playing && !f.notes.length) {
         // Idle: the pulse on C, breathing.
