@@ -145,16 +145,20 @@ SynthDef(\starlet, { arg out=0, amp=5.0, gate=1, pan=0, spread=0.8, midinote=30,
     var env1;
     var fspread;
     var freq = midinote.midicps;
-    env1 = EnvGen.kr(Env([1,20,1],[1.7,0.8]), 1);
+    // The detune between the eight voices swells and settles back. It used to
+    // swell 20x (to about +/-7%, more than a semitone), a phasing whoosh on long
+    // notes; 4x keeps the shimmer without the smear.
+    env1 = EnvGen.kr(Env([1,4,1],[1.7,0.8]), 1);
     fspread = 0.0007 + Rand(0,0.007)* env1;
     sig = SinOsc.ar(freq * ((0..7)/7 - 0.5 * fspread + 1) );
     sig1 = sig * ( sig/(sig+1.1)*50 * env1 ).clip(0.5);
     sig = SelectX.ar(\mix.kr(0.5), [sig, sig1]);
     sig = sig * 2;
-    // Soft saturation adds harmonics small speakers can play, and a 0.15 s
-    // fade-in (was 1.01 s) lets short notes reach full level.
+    // Soft saturation adds harmonics small speakers can play, a 0.15 s fade-in
+    // (was 1.01 s) lets short notes reach full level, and a 0.35 s release
+    // (was 1.1 s) stops notes trailing into the next module.
     sig = (sig * 4).tanh;
-    sig = sig * EnvGen.ar(\adsr.kr(Env.adsr(0.15,0.1,1,1.1)),gate,doneAction:doneAction);
+    sig = sig * EnvGen.ar(\adsr.kr(Env.adsr(0.15,0.1,1,0.35)),gate,doneAction:doneAction);
     // sig = sig /10;
     sig = Splay.ar(sig, spread, amp, pan);
     Out.ar(out, sig);
@@ -174,12 +178,13 @@ SynthDef("harpsichord1", {
 // \ff by eli.fieldsteel, https://sccode.org/1-5eb, reworked for In C by Claude:
 // a gate envelope so each note ends; one pluck per note (the original
 // re-plucked six times a second, which sounded like a delay pedal); about
-// 10 dB louder; no glide (each note is a new synth). oct = 1 lifts it an
-// octave if it sounds thin on small speakers.
+// 10 dB louder; no glide (each note is a new synth); a softer pluck (its
+// noise burst was 8x and hit hard on every attack, now 2.5x and low-passed).
+// oct = 1 lifts it an octave if it sounds thin on small speakers.
 SynthDef(\ff, { |out = 0, freq = 440, amp = 0.5, gate = 1, oct = 0|
 	var wn, sig;
 	freq = freq * (2 ** oct);
-	wn = Pluck.ar(WhiteNoise.ar(8 ! 2), Impulse.ar(0), 1/10, 1/(freq * 0.6.midiratio), 4, 0.93);
+	wn = Pluck.ar(LPF.ar(WhiteNoise.ar(2.5 ! 2), 4000), Impulse.ar(0), 1/10, 1/(freq * 0.6.midiratio), 4, 0.93);
 	wn = HPF.ar(wn, 300);
 	sig = (SinOsc.ar(freq * (1, 3..7)) * (1 / (1, 3..7)).pow(2.5)).sum;
 	sig = Pan2.ar(sig, Rand(-0.5, 0.5));
@@ -211,13 +216,14 @@ SynthDef(\highshort, { |out, amp = 0.1, freq = 440, oct = 2|
 	Out.ar(out, (snd * amp) ! 2);
 }).add;
 
-// One octave up with a quiet 3rd harmonic; gosub's envelope and reverb.
+// One octave up with a quiet 3rd harmonic; gosub's envelope and reverb;
+// 6 dB louder so it isn't buried.
 SynthDef(\envsine, { |out, amp = 0.1, freq = 440, oct = 1|
 	var f = freq * (2 ** oct);
 	var snd = SinOsc.ar(f) + (SinOsc.ar(f * 3) * 0.15);
 	snd = snd * EnvGen.ar(Env.linen(0.010, 0.200, 0.500));
 	snd = FreeVerb2.ar(snd, snd, mix: 0.5, room: 0.7, damp: 0.2);
-	snd = snd * amp;
+	snd = snd * amp * 2;
 	DetectSilence.ar(snd, doneAction: Done.freeSelf);
 	Out.ar(out, snd);
 }).add;
