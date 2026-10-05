@@ -355,8 +355,10 @@ export class RileySequencer {
   // already playing it by ear: it listens for at least one full pass, then
   // comes in at the start of that player's next pass, in step with them.
   // Returns that beat, or null to start straight away (nobody to join, the
-  // dice said no, or it would take more than joinMax seconds).
+  // dice said no, or it would take more than joinMax seconds). Not on module
+  // 1, so the entries still build up as a canon.
   joinBeat(v, m, r) {
+    if (v.i === 0) return null;
     const others = this.players.filter(q => q !== v && !q.done && q.pos === v.i && q.i === v.i
       && !q.resting && !q.listening && q.passStart != null);
     if (!others.length || this.rand() >= (r.joinChance ?? 0)) return null;

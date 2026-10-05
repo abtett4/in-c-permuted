@@ -870,8 +870,9 @@ player = { |p, instrument|
             pos[p] = i;
             // Sometimes catch someone already on this module by ear: listen for at least
             // one pass, then come in at the start of their next pass, in step with them.
+            // (Not on module 1, so the entries still build up as a canon.)
             others = (0..(nPlayers - 1)).select { |q| (q != p) and: { pos[q] == i } and: { busy[q].not } };
-            if (others.notEmpty and: { joinChance.coin }) {
+            if ((i > 0) and: { others.notEmpty } and: { joinChance.coin }) {
                 join = passStart[others.choose];
                 join = join + (beats * ((t + beats - join) / beats - 1e-9).ceil);
                 if (join - t <= (joinMax * tempo)) {
