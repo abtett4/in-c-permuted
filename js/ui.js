@@ -72,7 +72,7 @@ export function knob({ label, min, max, value, step = 0.01, format = String, onI
 
   let v = value;
   const set = (nv, emit = true) => {
-    nv = Math.min(max, Math.max(min, Math.round(nv / step) * step));
+    nv = Math.min(max, Math.max(min, +(Math.round(nv / step) * step).toFixed(6)));
     v = nv;
     const f = (v - min) / (max - min);
     const [a0, a1] = bipolar ? [Math.min(0.5, f), Math.max(0.5, f)] : [0, f];

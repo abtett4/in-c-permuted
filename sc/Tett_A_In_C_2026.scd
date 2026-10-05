@@ -282,7 +282,7 @@ SynthDef(\inc_pan, { |in = 256, out = 0, pan = 0|
 
 // Set up the 53 modules each with a bounded-random repeat number and the player variables
 (
-var song0, song1, song2, song3, song4, song5, song6, song7, song8, song9, song10, song11, song12, song13, song14, song15, song16, song17, song18, song19, song20, song21, song22, song23, song24, song25, song26, song27, song28, song29, song30, song31, song32, song33, song34, song35, song36, song37, song38, song39, song40, song41, song42, song43, song44, song45, song46, song47, song48, song49, song50, song51, song52, song53, offset, modules, nPlayers = 8, pos, bpm = 120, tempo = bpm / 240, player, pulse, finished = 0, entrySpread = 15, entries, octaves = \vary, octRange = 1, panSpread = 0.6, octFor, playerBus, playerPans, panners;
+var song0, song1, song2, song3, song4, song5, song6, song7, song8, song9, song10, song11, song12, song13, song14, song15, song16, song17, song18, song19, song20, song21, song22, song23, song24, song25, song26, song27, song28, song29, song30, song31, song32, song33, song34, song35, song36, song37, song38, song39, song40, song41, song42, song43, song44, song45, song46, song47, song48, song49, song50, song51, song52, song53, offset, modules, nPlayers = 8, pos, bpm = 120, tempo = bpm / 240, player, pulse, finished = 0, entrySpread = 15, entries, octaves = \vary, octRange = 1, panSpread = 0.6, octFor, playerBus, playerPans, panners, restChance = 0.25, restRange = [2, 8], resting = 0;
 
 song0 = Pbind(
     \instrument, \harpsichord1,
@@ -805,12 +805,15 @@ Ptpar([
 // ]).play(TempoClock(0.39))
 // )
 
-// Claude Code's "Riley Mode" where each player repeats a module for 8-16 s (a ~10-minute performance), waits if they get 5 modules ahead of the slowest player, and waits at module 53 until everyone has arrived
+// Claude Code's "Riley Mode" where each player repeats a module for 7-15 s (a ~11-minute performance), waits if they get 5 modules ahead of the slowest player, and waits at module 53 until everyone has arrived
 // Players come in one at a time over the first entrySpread seconds, and \bass is kept in the low register
 // Each player has its own place in the stereo field (spread over +/- panSpread) and, with octaves = \vary,
 // picks its own octave for each module (Riley: "It is OK to transpose patterns by an octave, especially to
 // transpose up. Transposing down by octaves works best on the patterns containing notes of long durations.")
 // Set octaves to a number (e.g. 0) to keep every player in that octave throughout.
+// Between modules a player sometimes drops out to listen (Riley: "occasionally to drop out and listen"):
+// with probability restChance it rests for restRange seconds, coming back in on the eighth-note pulse,
+// but only while at least half the players are still playing.
 // Tempo: the durations count whole notes (1/4 is a quarter note), so a TempoClock beat is a whole note and
 // tempo = bpm / 240 turns quarter-note BPM into whole notes per second. (0.39 was about 94 BPM.)
 
@@ -833,13 +836,23 @@ octFor = { |cell|
 
 player = { |p, instrument|
     Prout({ |ev|
+        var t = entries[p];   // this player's own time in beats, to put rests back on the pulse
         ev = Event.silent(entries[p]).yield;   // wait for this player's entry
         modules.do { |cell, i|
             var beats = cell.sum { |e| e[1].value };
-            var reps = (rrand(8, 16) * tempo / beats).round.max(1);  // 8-16 s per module, for a ~10-minute performance (Riley suggests 45-90 s)
+            var reps = (rrand(7, 15) * tempo / beats).round.max(1);  // 7-15 s per module, for a ~11-minute performance (Riley suggests 45-90 s)
             var oct = if (octaves == \vary) { octFor.(cell) } { octaves };
             var notes = cell.reject { |e| e[1].isRest }.collect { |e| e[0] + (12 * oct) };
-            var shift = 0;
+            var shift = 0, rest;
+            // Sometimes drop out between modules (still counted on the last one for the lead rule),
+            // but never below half the group, and come back in on the eighth-note pulse.
+            if ((i > 0) and: { restChance.coin } and: { resting < (nPlayers / 2).floor }) {
+                rest = ((t + (rrand(restRange[0], restRange[1]) * tempo)) / (1/8)).ceil * (1/8) - t;
+                resting = resting + 1;
+                ev = Event.silent(rest).yield;
+                resting = resting - 1;
+                t = t + rest;
+            };
             // Keep \bass low (E1-E3, MIDI 28-52) by moving the whole module by
             // octaves, so its melody keeps its shape. Same rule as js/registers.js.
             if (instrument == \bass) {
@@ -856,6 +869,7 @@ player = { |p, instrument|
                 ev = Pbind(\instrument, instrument, \out, playerBus[p].index, \outbus, playerBus[p].index,
                     [\midinote, \dur], Pseq(cell.collect { |e| [e[0] + (12 * oct) - shift, e[1]] }, 1)).embedInStream(ev);
                 reps = reps - 1;
+                t = t + beats;
             };
         };
         finished = finished + 1;

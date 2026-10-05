@@ -7,7 +7,9 @@
 // (as a number of passes through the cell); before each further pass it keeps
 // going if it still has passes left, if it is maxLead or more modules ahead of
 // the slowest player who has come in, or if it is on the last module and
-// someone hasn't arrived yet. The pulse plays until every player has finished.
+// someone hasn't arrived yet. Between modules a player sometimes rests
+// (restChance, for restRange seconds, back in on the pulse) as long as at least
+// half the group keeps playing. The pulse plays until every player has finished.
 //
 // Notes are scheduled ahead of time like the arranged sequencer, but always in
 // strict time order across all players (as SuperCollider's scheduler does), so
@@ -104,6 +106,12 @@ export class RileySequencer {
   playerRows() {
     const beat = this.beat;
     return this.players.map(v => (v.done ? null : v.entry > beat ? -1 : this.order[v.i]));
+  }
+
+  // Which players are resting between modules right now.
+  playerResting() {
+    const beat = this.beat;
+    return this.players.map(v => !!(v.resting && !v.done && v.beat > beat));
   }
 
   // Riley mode always starts from the beginning: where players are depends on
@@ -287,7 +295,22 @@ export class RileySequencer {
     for (;;) {
       const m = this.modules[this.order[v.i]];
       if (m.cellBeats <= 0) { v.reps = 0; }   // nothing to play: move straight on
+      else if (v.reps === null && v.i > 0 && !v.restDone) {
+        // Between modules, sometimes drop out to listen (still counted on the
+        // last module for the lead rule), unless half the group already is.
+        v.restDone = true;
+        const resting = this.players.filter(p => p.resting && !p.done).length;
+        if (this.rand() < (r.restChance ?? 0) && resting < Math.floor(this.players.length / 2)) {
+          const [lo, hi] = r.restRange ?? [0, 0];
+          const seconds = lo + this.rand() * Math.max(0, hi - lo);
+          v.beat = nextEighth(v.beat + seconds * this.tempo);   // back in on the pulse
+          v.resting = true;
+          return false;
+        }
+        continue;
+      }
       else if (v.reps === null) {
+        v.resting = false;
         v.reps = this.passesFor(m, r);
         v.passes = 0;
         v.pos = v.i;
@@ -304,6 +327,7 @@ export class RileySequencer {
       }
       v.i++;
       v.reps = null;
+      v.restDone = false;
       if (v.i > last) {
         v.done = true;
         return false;

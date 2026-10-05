@@ -157,6 +157,7 @@ main { padding: 18px 24px 8px; display: grid; grid-template-columns: minmax(0, 1
 
 .lane-players { position: absolute; inset: 0; display: flex; align-items: center; gap: 3px; padding-left: 4px; flex-wrap: wrap; align-content: center; }
 .lane-players i { width: 10px; height: 10px; border-radius: 50%; background: var(--pc); box-shadow: 0 0 0 1px var(--panel); }
+.lane-players i.is-resting { opacity: 0.3; }
 
 /* Riley mode: each player has its own SynthDef, repeats, octave and pan, so
    the per-module SynthDef, Oct, Repeats and Pan columns don't apply. */

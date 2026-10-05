@@ -177,6 +177,10 @@ function readRiley(ppar, env, warnings) {
     octaves: env.octaves && env.octaves.sym === 'vary' ? 'vary' : typeof env.octaves === 'number' ? env.octaves : 0,
     octRange: typeof env.octRange === 'number' ? env.octRange : null,
     panSpread: typeof env.panSpread === 'number' ? env.panSpread : null,
+    // Rests between modules: how often (`restChance`) and how long, in
+    // seconds (`restRange = [min, max]`). Without them, nobody rests.
+    restChance: typeof env.restChance === 'number' ? env.restChance : 0,
+    restRange: Array.isArray(env.restRange) && env.restRange.length === 2 && env.restRange.every(x => typeof x === 'number') ? env.restRange : [2, 8],
     hasPulse: !!(pulsePbind && pulsePbind.type === 'Pbind'),
     modules: labelModules(modules),
   };
