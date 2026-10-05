@@ -94,7 +94,7 @@ async function init() {
   }
 
   seq = mode === 'riley'
-    ? new RileySequencer(engine, modules, () => state.plan, () => ({ ...state.riley, seed: state.seed, octRange: state.knobs.octaves ?? DEFAULT_KNOBS.octaves, restRange: [state.riley.restMin, state.riley.restMax], joinMax: model.riley.joinMax }))
+    ? new RileySequencer(engine, modules, () => state.plan, () => ({ ...state.riley, seed: state.seed, octRange: state.knobs.octaves ?? DEFAULT_KNOBS.octaves, restRange: [state.riley.restMin, state.riley.restMax], joinMin: model.riley.joinMin, joinMax: model.riley.joinMax }))
     : new Sequencer(engine, modules, () => state.plan);
   seq.tempo = state.tempo;
   seq.onNote = n => notes.push(n);

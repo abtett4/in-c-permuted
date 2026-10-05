@@ -116,7 +116,8 @@ export class RileySequencer {
   // 'listening' before joining someone in step; null when playing.
   playerIdle() {
     const beat = this.beat;
-    return this.players.map(v => (v.done || v.beat <= beat ? null : v.resting ? 'resting' : v.listening ? 'listening' : null));
+    // (Decided up to LOOKAHEAD early, so only from when the silence starts.)
+    return this.players.map(v => (v.done || v.beat <= beat || v.idleFrom > beat ? null : v.resting ? 'resting' : v.listening ? 'listening' : null));
   }
 
   // Riley mode always starts from the beginning: where players are depends on
@@ -306,10 +307,10 @@ export class RileySequencer {
         // Between modules, sometimes drop out to listen (still counted on the
         // last module for the lead rule), unless half the group already is.
         v.restDone = true;
-        const resting = this.players.filter(p => p.resting && !p.done).length;
-        if (this.rand() < (r.restChance ?? 0) && resting < Math.floor(this.players.length / 2)) {
+        if (this.rand() < (r.restChance ?? 0) && this.roomToStop()) {
           const [lo, hi] = r.restRange ?? [0, 0];
           const seconds = lo + this.rand() * Math.max(0, hi - lo);
+          v.idleFrom = v.beat;
           v.beat = nextEighth(v.beat + seconds * this.tempo);   // back in on the pulse
           v.resting = true;
           return false;
@@ -323,6 +324,7 @@ export class RileySequencer {
         v.pos = v.i;
         const join = this.joinBeat(v, m, r);
         if (join != null) {
+          v.idleFrom = v.beat;
           v.beat = join;
           v.listening = true;
           return false;
@@ -351,20 +353,28 @@ export class RileySequencer {
     }
   }
 
+  // Resting and listening together never silence more than half the group.
+  roomToStop() {
+    const silent = this.players.filter(p => !p.done && (p.resting || p.listening)).length;
+    return silent < Math.floor(this.players.length / 2);
+  }
+
   // A player arriving on a module sometimes (joinChance) catches someone
-  // already playing it by ear: it listens for at least one full pass, then
-  // comes in at the start of that player's next pass, in step with them.
-  // Returns that beat, or null to start straight away (nobody to join, the
-  // dice said no, or it would take more than joinMax seconds). Not on module
-  // 1, so the entries still build up as a canon.
+  // already playing it by ear: it listens for at least one full pass (and at
+  // least joinMin seconds, a quick reaction time), then comes in at the start
+  // of that player's next pass, in step with them. Returns that beat, or null
+  // to start straight away (nobody to join, the dice said no, half the group
+  // is already silent, or it would take more than joinMax seconds). Not on
+  // module 1, so the entries still build up as a canon.
   joinBeat(v, m, r) {
     if (v.i === 0) return null;
     const others = this.players.filter(q => q !== v && !q.done && q.pos === v.i && q.i === v.i
       && !q.resting && !q.listening && q.passStart != null);
-    if (!others.length || this.rand() >= (r.joinChance ?? 0)) return null;
+    if (!others.length || this.rand() >= (r.joinChance ?? 0) || !this.roomToStop()) return null;
     const q = others[Math.floor(this.rand() * others.length)];
     const L = m.cellBeats;
-    const join = q.passStart + L * Math.ceil((v.beat + L - q.passStart) / L - 1e-9);
+    const listen = Math.max(L, (r.joinMin ?? 0) * this.tempo);
+    const join = q.passStart + L * Math.ceil((v.beat + listen - q.passStart) / L - 1e-9);
     return join - v.beat <= (r.joinMax ?? 0) * this.tempo ? join : null;
   }
 

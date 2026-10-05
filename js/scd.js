@@ -187,6 +187,7 @@ function readRiley(ppar, env, warnings) {
     // playing listens and joins them (`joinChance`), and the longest it will
     // listen, in seconds (`joinMax`).
     joinChance: typeof env.joinChance === 'number' ? env.joinChance : 0,
+    joinMin: typeof env.joinMin === 'number' ? env.joinMin : 0.5,
     joinMax: typeof env.joinMax === 'number' ? env.joinMax : 8,
     endHold: typeof env.endHold === 'number' ? env.endHold : 0,
     endSpread: typeof env.endSpread === 'number' ? env.endSpread : 0,
