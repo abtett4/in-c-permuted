@@ -282,7 +282,7 @@ SynthDef(\inc_pan, { |in = 256, out = 0, pan = 0|
 
 // Set up the 53 modules each with a bounded-random repeat number and the player variables
 (
-var song0, song1, song2, song3, song4, song5, song6, song7, song8, song9, song10, song11, song12, song13, song14, song15, song16, song17, song18, song19, song20, song21, song22, song23, song24, song25, song26, song27, song28, song29, song30, song31, song32, song33, song34, song35, song36, song37, song38, song39, song40, song41, song42, song43, song44, song45, song46, song47, song48, song49, song50, song51, song52, song53, offset, modules, nPlayers = 8, pos, bpm = 110, tempo = bpm / 240, player, pulse, finished = 0, entrySpread = 15, entries, octaves = \vary, octRange = 1, panSpread = 0.6, octFor, playerBus, playerPans, panners, restChance = 0.25, restRange = [2, 8], resting = 0;
+var song0, song1, song2, song3, song4, song5, song6, song7, song8, song9, song10, song11, song12, song13, song14, song15, song16, song17, song18, song19, song20, song21, song22, song23, song24, song25, song26, song27, song28, song29, song30, song31, song32, song33, song34, song35, song36, song37, song38, song39, song40, song41, song42, song43, song44, song45, song46, song47, song48, song49, song50, song51, song52, song53, offset, modules, nPlayers = 8, pos, bpm = 110, tempo = bpm / 240, player, pulse, finished = 0, entrySpread = 15, entries, octaves = \vary, octRange = 1, panSpread = 0.6, octFor, playerBus, playerPans, panners, restChance = 0.25, restRange = [2, 8], resting = 0, endHold = 15, endSpread = 20, endAt, dropOrder;
 
 song0 = Pbind(
     \instrument, \harpsichord1,
@@ -805,7 +805,7 @@ Ptpar([
 // ]).play(TempoClock(0.39))
 // )
 
-// Claude Code's "Riley Mode" where each player repeats a module for 7-15 s (a ~11-minute performance), waits if they get 5 modules ahead of the slowest player, and waits at module 53 until everyone has arrived
+// Claude Code's "Riley Mode" where each player repeats a module for 7-15 s (a ~12-minute performance), waits if they get 5 modules ahead of the slowest player, and waits at module 53 until everyone has arrived
 // Players come in one at a time over the first entrySpread seconds, and \bass is kept in the low register
 // Each player has its own place in the stereo field (spread over +/- panSpread) and, with octaves = \vary,
 // picks its own octave for each module (Riley: "It is OK to transpose patterns by an octave, especially to
@@ -814,6 +814,9 @@ Ptpar([
 // Between modules a player sometimes drops out to listen (Riley: "occasionally to drop out and listen"):
 // with probability restChance it rests for restRange seconds, coming back in on the eighth-note pulse,
 // but only while at least half the players are still playing.
+// The ending: once everyone has arrived at 53, the whole group plays it together for endHold seconds, then
+// players drop out one at a time, in random order, over endSpread seconds (Riley: "each player drops out
+// as he or she wishes"), leaving the last one alone with the pulse. The stay doesn't apply on 53.
 // Tempo: the durations count whole notes (1/4 is a quarter note), so a TempoClock beat is a whole note and
 // tempo = bpm / 240 turns quarter-note BPM into whole notes per second. (0.39 was about 94 BPM.)
 
@@ -861,9 +864,13 @@ player = { |p, instrument|
             };
             pos[p] = i;
             while {
-                reps > 0
-                or: { i - pos.minItem >= 5 }                                   // don't race ahead
-                or: { (i == (modules.size - 1)) and: { pos.minItem < i } }     // wait at 53
+                if (i < (modules.size - 1)) {
+                    reps > 0 or: { i - pos.minItem >= 5 }                      // stay, but don't race ahead
+                } {
+                    // On 53: wait for everyone, play together, then drop out in turn.
+                    if (endAt.isNil and: { pos.minItem == i }) { endAt = t };
+                    endAt.isNil or: { t < (endAt + ((endHold + (dropOrder[p] * endSpread / (nPlayers - 1).max(1))) * tempo)) }
+                }
             } {
                 // \out and \outbus send the notes to this player's own bus (bass uses outbus).
                 ev = Pbind(\instrument, instrument, \out, playerBus[p].index, \outbus, playerBus[p].index,
@@ -883,6 +890,7 @@ pulse = Pbind(\instrument, \harpsichord1, \midinote, 84, \dur, Pwhile({ finished
 // entrySpread seconds and on the eighth-note pulse, so module 1 builds up as a
 // canon. Set entrySpread = 0 to start everyone together.
 entries = nPlayers.collect { |k| (k * entrySpread * tempo / (nPlayers - 1).max(1)).round(1/8) }.scramble;
+dropOrder = (0..(nPlayers - 1)).scramble;   // who drops out first at the end
 
 // Each player plays into its own bus, panned by an inc_pan at the end of the
 // node tree: places spread evenly over +/- panSpread, handed out at random.

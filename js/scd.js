@@ -180,6 +180,11 @@ function readRiley(ppar, env, warnings) {
     // Rests between modules: how often (`restChance`) and how long, in
     // seconds (`restRange = [min, max]`). Without them, nobody rests.
     restChance: typeof env.restChance === 'number' ? env.restChance : 0,
+    // The ending: everyone plays 53 together for `endHold` seconds, then drops
+    // out one at a time over `endSpread` seconds. Without them, everyone stops
+    // as soon as the last player arrives and finishes its pass.
+    endHold: typeof env.endHold === 'number' ? env.endHold : 0,
+    endSpread: typeof env.endSpread === 'number' ? env.endSpread : 0,
     restRange: Array.isArray(env.restRange) && env.restRange.length === 2 && env.restRange.every(x => typeof x === 'number') ? env.restRange : [2, 8],
     hasPulse: !!(pulsePbind && pulsePbind.type === 'Pbind'),
     modules: labelModules(modules),

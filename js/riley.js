@@ -9,7 +9,9 @@
 // the slowest player who has come in, or if it is on the last module and
 // someone hasn't arrived yet. Between modules a player sometimes rests
 // (restChance, for restRange seconds, back in on the pulse) as long as at least
-// half the group keeps playing. The pulse plays until every player has finished.
+// half the group keeps playing. Once everyone is on 53 they play it together
+// for endHold seconds, then drop out one at a time over endSpread seconds. The
+// pulse plays until every player has finished.
 //
 // Notes are scheduled ahead of time like the arranged sequencer, but always in
 // strict time order across all players (as SuperCollider's scheduler does), so
@@ -123,6 +125,8 @@ export class RileySequencer {
     this.voices = r.players.map((pl, p) => this.newVoice(p, 0, 0, slots[p]));
     if (this.pulseIndex >= 0) this.voices.push({ isPulse: true, beat: 0, done: false });
     this.spreadEntries(r);
+    this.endAt = null;
+    this.dropOrder = null;
     this.prev = null;
     this.anchorBeat = 0;
     this.anchorTime = this.engine.now() + 0.1;
@@ -316,10 +320,11 @@ export class RileySequencer {
         v.pos = v.i;
       }
       const slowest = Math.min(...this.players.map(p => p.pos));
-      const keepGoing = m.cellBeats > 0 && (
-        v.reps > 0
-        || v.i - slowest >= r.maxLead
-        || (v.i === last && slowest < v.i));
+      // On 53: wait for everyone, play together, then drop out in turn.
+      if (v.i === last && this.endAt == null && slowest === last) this.endAt = v.beat;
+      const keepGoing = m.cellBeats > 0 && (v.i < last
+        ? v.reps > 0 || v.i - slowest >= r.maxLead
+        : this.endAt == null || v.beat < this.dropBeat(v, r));
       if (keepGoing) {
         v.reps = Math.max(0, v.reps - 1);
         v.passes++;
@@ -333,6 +338,20 @@ export class RileySequencer {
         return false;
       }
     }
+  }
+
+  // When a player stops at the end: endHold seconds after everyone reached 53,
+  // plus its turn (in an order shuffled by the seed) spread over endSpread
+  // seconds. The order is drawn when the ending starts, from its own generator,
+  // so it doesn't disturb the rest of the performance.
+  dropBeat(v, r) {
+    if (!this.dropOrder || this.dropOrder.length !== this.players.length) {
+      this.dropOrder = entrySlots(this.players.length, mulberry32((r.seed ^ 0x5eed) >>> 0));
+    }
+    const n = this.players.length;
+    const turn = this.dropOrder[this.players.indexOf(v)] ?? n - 1;
+    const seconds = (r.endHold ?? 0) + (n > 1 ? (turn * (r.endSpread ?? 0)) / (n - 1) : 0);
+    return this.endAt + seconds * this.tempo;
   }
 
   // A player's octave on a module: fixed (-2..2), or "vary" (picked per

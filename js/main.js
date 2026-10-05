@@ -83,6 +83,8 @@ async function init() {
     state.riley.restChance ??= model.riley.restChance;     // ... and before rests
     state.riley.restMin ??= model.riley.restRange[0];
     state.riley.restMax ??= model.riley.restRange[1];
+    state.riley.endHold ??= model.riley.endHold;           // ... and before the ending
+    state.riley.endSpread ??= model.riley.endSpread;
     // Links from before player pans: spread the players as a permutation would.
     if (state.riley.players.some(p => p.pan == null)) {
       const pans = playerPans(state.riley.players.length, state.knobs.pan ?? DEFAULT_KNOBS.pan, mulberry32(state.seed));
@@ -151,6 +153,8 @@ function scoreRiley(seed) {
     restChance: r.restChance,
     restMin: r.restRange[0],
     restMax: r.restRange[1],
+    endHold: r.endHold,
+    endSpread: r.endSpread,
     // As written in the .scd: its `octaves` (\vary or a number) and its pan spread.
     players: rileyPlayers(r.nPlayers, pool.length ? pool : instruments, seed, r.panSpread ?? DEFAULT_KNOBS.pan).map(p => ({ ...p, oct: r.octaves })),
   };
@@ -330,6 +334,8 @@ function buildPlayers() {
     ['restChance', 'Rest chance', 0, 1, 0.05, v => `${Math.round(v * 100)}%`, 'How often a player drops out to listen between modules (restChance in the .scd). Riley: “occasionally to drop out and listen.” A player only rests while at least half the group keeps playing, and comes back in on the pulse.'],
     ['restMin', 'Shortest rest', 0, 60, 1, v => `${v} s`, 'The shortest rest between modules (restRange’s first number in the .scd).'],
     ['restMax', 'Longest rest', 0, 60, 1, v => `${v} s`, 'The longest rest between modules (restRange’s second number).'],
+    ['endHold', 'Together on 53', 0, 120, 1, v => `${v} s`, 'Once everyone has reached module 53, how long the whole group plays it together before anyone drops out (endHold in the .scd).'],
+    ['endSpread', 'Drop-outs over', 0, 120, 1, v => (v === 0 ? 'together' : `${v} s`), 'Then players drop out one at a time, in random order, over this many seconds (endSpread in the .scd), leaving the last one alone with the pulse. 0 stops everyone together.'],
   ];
   for (const [key, label, min, max, step, format, title] of defs) {
     const value = key === 'count' ? r.players.length : r[key];
@@ -553,7 +559,7 @@ function applyPlan(seed, plan, riley) {
   if (riley) {
     state.riley = riley;
     renderPlayers();
-    for (const key of ['minStay', 'maxStay', 'maxLead', 'entrySpread', 'restChance', 'restMin', 'restMax']) knobsByKey[key]?.set(riley[key], false);
+    for (const key of ['minStay', 'maxStay', 'maxLead', 'entrySpread', 'restChance', 'restMin', 'restMax', 'endHold', 'endSpread']) knobsByKey[key]?.set(riley[key], false);
   }
   seedInput.value = seed;
   rows.forEach((r, i) => { r.refresh(); seq.resync(i); });
