@@ -1,4 +1,4 @@
-import { parseScd } from './scd.js';
+import { parseScd, synthDefNamesIn } from './scd.js';
 import { Engine, MAX_MODULES } from './engine.js';
 import { Sequencer } from './sequencer.js';
 import { RileySequencer } from './riley.js';
@@ -15,6 +15,7 @@ import { Audition, AUDITION_SLOT } from './audition.js';
 //   riley:    players move through all 53 modules (the 2026 file's Riley mode)
 //   arranged: the fixed Ptpar timeline of the 2019 arrangement
 const FILES = { riley: 'sc/Tett_A_In_C_2026.scd', arranged: 'sc/Tett_A_In_C.scd' };
+const CANDIDATES = 'sc/candidates.scd';   // proposed SynthDef fixes, audition only
 const SCORE_SEED = 1964;
 
 const $ = id => document.getElementById(id);
@@ -26,6 +27,7 @@ let mode;             // 'riley' | 'arranged'
 let model;            // parsed .scd
 let modules;          // the rows: model.arranged or model.riley.modules
 let instruments;      // SynthDef names offered in the dropdowns
+let candidates = [];  // proposed fixes from sc/candidates.scd (Audition panel only)
 let state;            // { mode, seed, knobs, tempo, masterDb, plan, riley }
 let seq;
 let cueBeat = 0;
@@ -54,6 +56,10 @@ async function init() {
   // The last mixer channel is kept for the Audition panel.
   if (modules.length > AUDITION_SLOT) throw new Error(`The mixer has room for ${AUDITION_SLOT} modules but the score has ${modules.length}.`);
   instruments = model.synthDefNames;
+  try {
+    const c = await fetch(CANDIDATES);
+    if (c.ok) candidates = synthDefNamesIn(await c.text()).filter(n => !instruments.includes(n));
+  } catch { /* no candidates file: nothing to audition beyond the piece's own */ }
 
   const saved = location.hash.length > 1 ? decodeState(location.hash.slice(1), modules) : null;
   state = saved && saved.mode === mode ? { ...saved, mode } : {
@@ -176,7 +182,7 @@ async function ensureEngine() {
   if (engine.ready) return true;
   $('play').disabled = true;
   try {
-    const { instruments: loaded, failed } = await engine.boot(instruments, msg => showStatus(msg));
+    const { instruments: loaded, failed } = await engine.boot([...instruments, ...candidates], msg => showStatus(msg));
     if (failed.length) showStatus(`Couldn't load SynthDef${failed.length > 1 ? 's' : ''}: ${failed.join(', ')}. Notes using ${failed.length > 1 ? 'them' : 'it'} will be silent.`, true);
     if (!loaded.length) throw new Error('No SynthDefs loaded.');
     engine.setMaster(dbamp(state.masterDb));
@@ -350,27 +356,32 @@ function renderPlayers() {
 // ---- Audition -------------------------------------------------------------------
 
 const audCards = {};
+let audList = [];     // the piece's SynthDefs, each followed by its proposed fixes
 
 function buildAudition() {
+  audList = instruments.flatMap(n => [n, ...candidates.filter(c => c.startsWith(`${n}_`))]);
+  audList.push(...candidates.filter(c => !audList.includes(c)));
+
   const select = $('aud-module');
   modules.forEach((m, i) => {
     select.append(el('option', { value: i }, m.isPulse || m.number === 0 ? 'Pulse' : `Module ${m.label}`));
   });
   select.value = modules.findIndex(m => !m.isPulse && m.number !== 0);
 
-  for (const name of instruments) {
+  for (const name of audList) {
     const play = el('button', { class: 'mini', type: 'button', 'aria-label': `Audition ${name}`, title: `Play the module with ${name}` });
     play.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9-5.5z"/></svg>';
     play.addEventListener('click', () => startAudition([name]));
     const peak = el('span', { class: 'peak' }, '—');
     const tags = el('div', { class: 'tags' });
-    const card = el('div', { class: 'aud-card' }, play, el('span', { class: 'name' }, name), peak, tags);
-    card.style.setProperty('--c', colorFor(name));
+    const proposed = candidates.includes(name);
+    const card = el('div', { class: `aud-card${proposed ? ' is-proposed' : ''}` }, play, el('span', { class: 'name' }, name), peak, tags);
+    card.style.setProperty('--c', colorFor(proposed ? name.replace(/_[^_]+$/, '') : name));
     $('aud-grid').append(card);
     audCards[name] = { card, peak, tags, tagKey: '' };
   }
 
-  $('aud-all').addEventListener('click', () => startAudition(instruments));
+  $('aud-all').addEventListener('click', () => startAudition(audList));
   $('aud-stop').addEventListener('click', () => audition.stop());
 }
 
@@ -392,7 +403,9 @@ async function startAudition(list) {
 // who uses it, and whether it ignores pitch or holds notes until released.
 function auditionTags(name) {
   const out = [];
-  if (mode === 'riley') {
+  if (candidates.includes(name)) {
+    out.push(['proposed fix, not in the piece', 'proposed']);
+  } else if (mode === 'riley') {
     const who = state.riley.players.map((p, i) => (p.instrument === name ? `P${i + 1}` : null)).filter(Boolean);
     out.push(who.length ? [`players ${who.join(', ')}`] : ['no players', 'warn']);
   } else {
@@ -409,7 +422,7 @@ function auditionTags(name) {
 
 function frameAudition() {
   const playing = audition.current();
-  for (const name of instruments) {
+  for (const name of audList) {
     const c = audCards[name];
     c.card.classList.toggle('is-playing', name === playing);
     const amp = audition.peaks[name];

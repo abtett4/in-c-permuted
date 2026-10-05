@@ -11,20 +11,27 @@
 //
 // SynthDef names are collected so the page knows which instruments exist.
 
+// The names of the SynthDefs a file defines (ignoring commented-out ones).
+export function synthDefNamesIn(src) {
+  return namesFromTokens(tokenize(stripComments(src)));
+}
+
+function namesFromTokens(tokens) {
+  const names = [];
+  for (let i = 0; i < tokens.length - 2; i++) {
+    if (tokens[i].v === 'SynthDef' && tokens[i + 1].v === '(') {
+      const t = tokens[i + 2];
+      if ((t.type === 'symbol' || t.type === 'string') && !names.includes(t.v)) names.push(t.v);
+    }
+  }
+  return names;
+}
+
 export function parseScd(src) {
   const code = stripComments(src);
   const tokens = tokenize(code);
   const warnings = [];
-
-  const synthDefNames = [];
-  for (let i = 0; i < tokens.length - 2; i++) {
-    if (tokens[i].v === 'SynthDef' && tokens[i + 1].v === '(') {
-      const t = tokens[i + 2];
-      if (t.type === 'symbol' || t.type === 'string') {
-        if (!synthDefNames.includes(t.v)) synthDefNames.push(t.v);
-      }
-    }
-  }
+  const synthDefNames = namesFromTokens(tokens);
 
   // The score lives in the last top-level ( ... ) block that has Pbinds in it.
   const blocks = topLevelBlocks(tokens);

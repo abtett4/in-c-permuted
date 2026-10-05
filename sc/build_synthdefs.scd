@@ -12,8 +12,7 @@
 (
 var here = PathName(thisProcess.nowExecutingPath).pathOnly;
 var dir = here +/+ ".." +/+ "synthdefs";
-var src = File.readAllString(here +/+ "Tett_A_In_C_2026.scd");
-var block, before, added, strip, master;
+var block, strip, master, buildFile;
 
 // The first top-level ( ... ) block that contains a SynthDef, skipping
 // comments, strings and character literals.
@@ -45,26 +44,31 @@ var findSynthDefBlock = { |s|
 	result
 };
 
-File.mkdir(dir);
-
-block = findSynthDefBlock.(src);
-if (block.isNil) { Error("No SynthDef block found in Tett_A_In_C_2026.scd").throw };
-
-// Run the block (its .add calls register each SynthDef locally) and collect
-// whatever it defined.
-before = SynthDescLib.global.synthDescs.copy;
-block.interpret;
-added = SynthDescLib.global.synthDescs.select { |desc, name| before[name] !== desc };
-
-added.do { |desc|
-	var toZero = desc.def.children.any { |u| u.class.name == \Out and: { u.inputs[0] == 0 } };
-	if (toZero) {
-		("WARNING: " ++ desc.name ++ " writes to bus 0. Change it to Out.ar(out, ...) with an `out` argument, "
-			++ "or the web mixer can't give it a fader, pan or meter.").postln;
+// Runs a file's SynthDef block (its .add calls register each SynthDef
+// locally) and writes whatever it defined.
+buildFile = { |name|
+	var src = File.readAllString(here +/+ name);
+	var block = findSynthDefBlock.(src);
+	var before, added;
+	if (block.isNil) { Error("No SynthDef block found in " ++ name).throw };
+	before = SynthDescLib.global.synthDescs.copy;
+	block.interpret;
+	added = SynthDescLib.global.synthDescs.select { |desc, key| before[key] !== desc };
+	added.do { |desc|
+		var toZero = desc.def.children.any { |u| u.class.name == \Out and: { u.inputs[0] == 0 } };
+		if (toZero) {
+			("WARNING: " ++ desc.name ++ " writes to bus 0. Change it to Out.ar(out, ...) with an `out` argument, "
+				++ "or the web mixer can't give it a fader, pan or meter.").postln;
+		};
+		desc.def.writeDefFile(dir);
+		("wrote " ++ desc.name).postln;
 	};
-	desc.def.writeDefFile(dir);
-	("wrote " ++ desc.name).postln;
 };
+
+File.mkdir(dir);
+buildFile.("Tett_A_In_C_2026.scd");
+// Proposed replacements, auditioned on the page but not used by the piece.
+if (File.exists(here +/+ "candidates.scd")) { buildFile.("candidates.scd") };
 
 // ---- Web-only: the mixer -------------------------------------------------
 // Every module plays into its own stereo bus (firstBus + 2*index). The page

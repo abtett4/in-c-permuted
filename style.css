@@ -187,6 +187,8 @@ main { padding: 18px 24px 8px; display: grid; grid-template-columns: minmax(0, 1
 .aud-card .tags { grid-column: 2 / 4; display: flex; flex-wrap: wrap; gap: 4px; font-size: 11px; color: var(--text-dim); }
 .aud-card .tags span { padding: 1px 6px; border-radius: 4px; background: var(--panel-2); }
 .aud-card .tags span.warn { color: #ffd38a; }
+.aud-card.is-proposed { border-style: dashed; border-left-style: solid; background: color-mix(in srgb, var(--c) 6%, var(--bg)); }
+.aud-card .tags span.proposed { color: var(--c); }
 svg.cell { cursor: pointer; }
 
 /* ---- Knob --------------------------------------------------------------- */
