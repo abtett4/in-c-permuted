@@ -282,7 +282,7 @@ SynthDef(\inc_pan, { |in = 256, out = 0, pan = 0|
 
 // Set up the 53 modules each with a bounded-random repeat number and the player variables
 (
-var song0, song1, song2, song3, song4, song5, song6, song7, song8, song9, song10, song11, song12, song13, song14, song15, song16, song17, song18, song19, song20, song21, song22, song23, song24, song25, song26, song27, song28, song29, song30, song31, song32, song33, song34, song35, song36, song37, song38, song39, song40, song41, song42, song43, song44, song45, song46, song47, song48, song49, song50, song51, song52, song53, offset, modules, nPlayers = 8, pos, bpm = 120, tempo = bpm / 240, player, pulse, finished = 0, entrySpread = 15, entries, octaves = \vary, octRange = 1, panSpread = 0.6, octFor, playerBus, playerPans, panners, restChance = 0.25, restRange = [2, 8], resting = 0;
+var song0, song1, song2, song3, song4, song5, song6, song7, song8, song9, song10, song11, song12, song13, song14, song15, song16, song17, song18, song19, song20, song21, song22, song23, song24, song25, song26, song27, song28, song29, song30, song31, song32, song33, song34, song35, song36, song37, song38, song39, song40, song41, song42, song43, song44, song45, song46, song47, song48, song49, song50, song51, song52, song53, offset, modules, nPlayers = 8, pos, bpm = 110, tempo = bpm / 240, player, pulse, finished = 0, entrySpread = 15, entries, octaves = \vary, octRange = 1, panSpread = 0.6, octFor, playerBus, playerPans, panners, restChance = 0.25, restRange = [2, 8], resting = 0;
 
 song0 = Pbind(
     \instrument, \harpsichord1,

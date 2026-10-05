@@ -73,7 +73,7 @@ async function init() {
       ...(model.riley && model.riley.panSpread != null ? { pan: model.riley.panSpread } : {}),
     },
     tempo: model.tempo,
-    masterDb: -3,
+    masterDb: -4,
     plan: scorePlan(modules, SCORE_SEED),
     riley: null,
   };
