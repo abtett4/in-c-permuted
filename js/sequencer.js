@@ -25,31 +25,43 @@ export class Sequencer {
     this.timer = makeTicker(() => this.tick(), TICK_MS);
   }
 
+  // Until a tempo change takes over (anchorTime), the previous tempo still
+  // applies, so the beat never jumps.
   beatAt(time) {
-    return this.anchorBeat + (time - this.anchorTime) * this.tempo;
+    const a = this.prev && time < this.anchorTime ? this.prev : this;
+    return a.anchorBeat + (time - a.anchorTime) * a.tempo;
   }
 
   timeAt(beat) {
-    return this.anchorTime + (beat - this.anchorBeat) / this.tempo;
+    const a = this.prev && beat < this.anchorBeat ? this.prev : this;
+    return a.anchorTime + (beat - a.anchorBeat) / a.tempo;
   }
 
   get beat() {
     return this.playing ? this.beatAt(this.engine.now()) : this.anchorBeat;
   }
 
+  // A new tempo takes over right after the notes already sent ahead, so the
+  // change is seamless.
   setTempo(tempo) {
     if (this.playing) {
-      const now = this.engine.now();
-      this.anchorBeat = this.beatAt(now);
-      this.anchorTime = now;
+      const t = Math.max(this.engine.now(), this.horizonTime || 0);
+      const beat = this.beatAt(t);
+      this.prev = { anchorBeat: this.anchorBeat, anchorTime: this.anchorTime, tempo: this.tempo };
+      this.anchorBeat = beat;
+      this.anchorTime = t;
+    } else {
+      this.prev = null;
     }
     this.tempo = tempo;
   }
 
   play(fromBeat = 0) {
     const plan = this.getPlan();
+    this.prev = null;
     this.anchorBeat = fromBeat;
     this.anchorTime = this.engine.now() + 0.1;
+    this.horizonTime = this.anchorTime;
     this.horizonBeat = fromBeat;
     this.cursors = this.modules.map((m, i) => seek(m, plan[i], fromBeat));
     this.playing = true;
@@ -76,7 +88,8 @@ export class Sequencer {
   tick() {
     if (!this.playing) return;
     const now = this.engine.now();
-    const horizon = this.beatAt(now + LOOKAHEAD);
+    this.horizonTime = now + LOOKAHEAD;
+    const horizon = this.beatAt(this.horizonTime);
     const plan = this.getPlan();
 
     this.modules.forEach((m, i) => {

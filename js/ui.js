@@ -1,12 +1,32 @@
 // Small UI building blocks: knobs, dB meters and the cell previews.
 
-const PALETTE = ['#f0b35a', '#a58cff', '#56c8e8', '#f27fb5', '#8ed68a', '#e8dc6a', '#ff8a65', '#7aa2ff'];
-const KNOWN_COLORS = { pluck: '#f0b35a', bass: '#a58cff', star: '#56c8e8', starlet: '#f27fb5', harpsichord1: '#8ed68a' };
+// One color per SynthDef: twelve hues 30° apart in OKLCH, stepped through
+// three lightnesses (0.56 / 0.84 / 0.70) so that neighbours on the wheel also
+// differ in lightness. Every pair is at least 15.6 apart (OKLab ΔE ×100) under
+// normal vision, and every color is at least 3.6:1 against the panels. No set
+// of twelve can also stay apart for colour-blind viewers, so colour is never
+// the only cue: SynthDef names are always shown beside it.
+const KNOWN_COLORS = {
+  ff: '#bc4849',            // red         h 23
+  click: '#ffb98d',         // peach       h 53
+  pluck: '#c89513',         // gold        h 83
+  burst: '#767b00',         // olive       h113
+  harpsichord1: '#8de388',  // green       h143
+  envsine: '#1bb897',       // teal        h173
+  midsine: '#02848d',       // deep cyan   h203
+  star: '#89d6ff',          // sky         h233
+  highshort: '#6c9cfb',     // blue        h263
+  bass: '#7a5fc3',          // violet      h293
+  highlong: '#f5acfd',      // lilac       h323
+  starlet: '#e473a6',       // pink        h353
+};
+// For SynthDefs added later, until they're given a color above.
+const SPARE = ['#d8d4cc', '#a3a8b8', '#c9a88a', '#8fb3a0'];
 const assigned = {};
 
 export function colorFor(instrument) {
   if (KNOWN_COLORS[instrument]) return KNOWN_COLORS[instrument];
-  if (!assigned[instrument]) assigned[instrument] = PALETTE[(Object.keys(assigned).length + 5) % PALETTE.length];
+  if (!assigned[instrument]) assigned[instrument] = SPARE[Object.keys(assigned).length % SPARE.length];
   return assigned[instrument];
 }
 

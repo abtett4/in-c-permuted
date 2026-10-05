@@ -301,11 +301,11 @@ function buildPlayers() {
   $('players-section').hidden = false;
   const r = state.riley;
   const defs = [
-    ['count', 'Players', 1, 24, 1, v => String(v), 'How many players. Takes effect the next time the piece starts from the beginning.'],
+    ['count', 'Players', 1, 24, 1, v => String(v), 'How many players. While the piece plays, new players join on the slowest player’s module.'],
     ['minStay', 'Shortest stay', 5, 180, 5, v => `${v} s`, 'The least time a player spends on a module (rrand’s first number in the .scd).'],
     ['maxStay', 'Longest stay', 5, 240, 5, v => `${v} s`, 'The most time a player spends on a module (rrand’s second number).'],
     ['maxLead', 'Max lead', 1, 8, 1, v => `${v} mod`, 'How many modules ahead of the slowest player someone may get before waiting. Riley: “stay within 2 or 3 patterns of each other.”'],
-    ['entrySpread', 'Entries over', 0, 120, 5, v => (v === 0 ? 'together' : `${v} s`), 'Players come in one at a time, in random order and on the eighth-note pulse, over this many seconds (entrySpread in the .scd). 0 starts everyone together. Takes effect the next time the piece starts from the beginning.'],
+    ['entrySpread', 'Entries over', 0, 120, 5, v => (v === 0 ? 'together' : `${v} s`), 'Players come in one at a time, in random order and on the eighth-note pulse, over this many seconds (entrySpread in the .scd). 0 starts everyone together. While the piece plays, it re-spaces the players who haven’t come in yet.'],
   ];
   for (const [key, label, min, max, step, format, title] of defs) {
     const value = key === 'count' ? r.players.length : r[key];
@@ -317,6 +317,9 @@ function buildPlayers() {
           r[key] = v;
           if (key === 'minStay' && r.maxStay < v) { r.maxStay = v; knobsByKey.maxStay.set(v, false); }
           if (key === 'maxStay' && r.minStay > v) { r.minStay = v; knobsByKey.minStay.set(v, false); }
+          // Apply now, not just from the next module or the next start.
+          if (key === 'minStay' || key === 'maxStay') seq.restay();
+          if (key === 'entrySpread') seq.respread();
         }
         saveHash();
       },
@@ -332,6 +335,7 @@ function setPlayerCount(n) {
   if (n < players.length) players.length = n;
   const extra = rileyPlayers(n, rileyPool(), state.seed + n);
   while (players.length < n) players.push(extra[players.length]);
+  seq.setPlayerCount();   // takes effect at once if the piece is playing or paused
   renderPlayers();
 }
 
@@ -762,7 +766,8 @@ function frameRiley(beat) {
     c.chip.classList.toggle('is-done', started && (row == null || row < 0));
   });
 
-  $('clock-time').textContent = formatTime(beat / state.tempo);
+  // Real elapsed time: unlike beats / tempo, it doesn't jump when the tempo changes.
+  $('clock-time').textContent = formatTime(seq.seconds);
   const active = where.filter(r => r != null && r >= 0).map(r => Number(modules[r].label));
   const lo = Math.min(...active);
   const hi = Math.max(...active);
