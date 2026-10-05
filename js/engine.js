@@ -13,7 +13,10 @@ const SYNTH_GROUP = 100;
 const MIXER_GROUP = 101;
 const STRIP_NODES = [102, 103];
 const MASTER_NODE = 104;
-const MIXER_DEFS = ['inc_strip', 'inc_master'];
+const PAN_GROUP = 105;             // per-player panners, between the synths and the mixer
+const PANNER_BASE = 200;           // player p's panner is node PANNER_BASE + p
+const PLAYER_BUS = 256;            // player p's notes play into PLAYER_BUS + 2p, +1
+const MIXER_DEFS = ['inc_strip', 'inc_master', 'inc_pan'];
 
 // What a default Pbind event sends when the SynthDef has a control of that name.
 const EVENT_DEFAULTS = { amp: 0.1, pan: 0, legato: 0.8 };
@@ -27,6 +30,9 @@ export class Engine {
     this.gains = new Array(MAX_MODULES).fill(1);
     this.pans = new Array(MAX_MODULES).fill(0);
     this.levels = new Float32Array(MAX_MODULES + 2);   // modules, then master L, R
+    this.playerPans = [];    // Riley mode: one pan per player
+    this.playerRoutes = [];  // the module each player's panner feeds
+    this.panners = new Set();
   }
 
   get ready() { return !!this.sonic; }
@@ -136,7 +142,10 @@ export class Engine {
     for (const bytes of Object.values(this.defBytes)) await this.sonic.loadSynthDef(bytes.slice(0));
     this.sonic.send('/notify', 1);   // SendReply (the meters) only reaches registered clients
     this.sonic.send('/g_new', SYNTH_GROUP, 0, 0);
-    this.sonic.send('/g_new', MIXER_GROUP, 3, SYNTH_GROUP);
+    this.sonic.send('/g_new', PAN_GROUP, 3, SYNTH_GROUP);
+    this.sonic.send('/g_new', MIXER_GROUP, 3, PAN_GROUP);
+    this.panners.clear();
+    this.setPlayerPans(this.playerPans);
     STRIP_NODES.forEach((id, i) => {
       this.sonic.send('/s_new', 'inc_strip', id, 1, MIXER_GROUP,
         'firstBus', FIRST_BUS + 2 * STRIP_SIZE * i, 'out', MASTER_BUS, 'replyID', i);
@@ -155,11 +164,13 @@ export class Engine {
 
   // One note of one module, sent as timestamped bundles so timing is exact.
   // Mirrors what Pbind's default event does with the same values.
-  playNote({ time, instrument, midinote, dur, tempo, moduleIndex, extras = {} }) {
+  // `player` (Riley mode) sends the note through that player's panner, which
+  // feeds the module's channel; without it the note goes straight there.
+  playNote({ time, instrument, midinote, dur, tempo, moduleIndex, extras = {}, player = null }) {
     const def = this.defs[instrument];
     if (!def || !this.sonic) return;
     const c = def.controls;
-    const bus = FIRST_BUS + 2 * moduleIndex;
+    const bus = player != null && this.panners.has(player) ? PLAYER_BUS + 2 * player : FIRST_BUS + 2 * moduleIndex;
     const values = { ...EVENT_DEFAULTS, ...extras };
     const legato = values.legato;
     const notes = Array.isArray(midinote) ? midinote : [midinote];
@@ -192,6 +203,34 @@ export class Engine {
   setPans(pans) {
     this.pans = pans;
     this.sendToStrips('pans', pans);
+  }
+
+  // Riley mode: one pan (-1..1) per player. Creates or frees panners to match.
+  setPlayerPans(pans) {
+    this.playerPans = pans.slice();
+    if (!this.sonic) return;
+    pans.forEach((pan, p) => {
+      const id = PANNER_BASE + p;
+      if (this.panners.has(p)) {
+        this.sonic.send('/n_set', id, 'pan', pan);
+      } else {
+        this.sonic.send('/s_new', 'inc_pan', id, 1, PAN_GROUP,
+          'in', PLAYER_BUS + 2 * p, 'out', FIRST_BUS + 2 * (this.playerRoutes[p] || 0), 'pan', pan);
+        this.panners.add(p);
+      }
+    });
+    for (const p of [...this.panners]) {
+      if (p >= pans.length) { this.sonic.send('/n_free', PANNER_BASE + p); this.panners.delete(p); }
+    }
+  }
+
+  // Points player p's panner at a module's channel, at `time` (in step with
+  // the notes).
+  routePlayer(p, moduleIndex, time) {
+    this.playerRoutes[p] = moduleIndex;
+    if (this.sonic && this.panners.has(p)) {
+      this.sonic.sendOSC(this.osc.encodeBundle(time, [['/n_set', PANNER_BASE + p, 'out', FIRST_BUS + 2 * moduleIndex]]));
+    }
   }
 
   sendToStrips(control, values) {

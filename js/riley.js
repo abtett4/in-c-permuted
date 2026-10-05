@@ -153,6 +153,8 @@ export class RileySequencer {
   // Pausing drops the notes already sent ahead, so the fraction of a second
   // after Pause is skipped when Play resumes.
   pause() {
+    // Pausing drops scheduled panner re-routes too; re-route on resume.
+    for (const v of this.players) v.routed = null;
     this.secBase = this.seconds;
     this.anchorBeat = this.beat;
     this.playing = false;
@@ -275,7 +277,7 @@ export class RileySequencer {
     const m = this.modules[row];
     const e = m.cell[v.ev];
     const instrument = (r.players[v.p] || r.players[r.players.length - 1]).instrument;
-    if (!e.rest && e.dur > 0) this.emit(row, e, v.beat, plan, instrument);
+    if (!e.rest && e.dur > 0) this.emit(row, e, v.beat, plan, instrument, v);
     v.beat += e.dur;
     v.ev = (v.ev + 1) % m.cell.length;
   }
@@ -309,13 +311,19 @@ export class RileySequencer {
     }
   }
 
-  emit(row, e, beat, plan, instrument) {
+  // `v` is the player (none for the pulse): its notes go through its own
+  // panner, which is pointed at this module's channel when it changes module.
+  emit(row, e, beat, plan, instrument, v = null) {
     const p = plan[row];
     const m = this.modules[row];
     const time = this.timeAt(beat);
     const shift = transposition(instrument, m, p.octave);
     const midinote = Array.isArray(e.midinote) ? e.midinote.map(n => n + shift) : e.midinote + shift;
-    this.engine.playNote({ time, instrument, midinote, dur: e.dur, tempo: this.tempo, moduleIndex: row, extras: m.extras });
+    if (v && v.routed !== row) {
+      this.engine.routePlayer(v.p, row, time);
+      v.routed = row;
+    }
+    this.engine.playNote({ time, instrument, midinote, dur: e.dur, tempo: this.tempo, moduleIndex: row, extras: m.extras, player: v ? v.p : null });
     this.lastBeat = Math.max(this.lastBeat, beat + e.dur);
     if (this.onNote) {
       const legato = m.extras.legato ?? 0.8;

@@ -3,7 +3,7 @@ import { Engine, MAX_MODULES } from './engine.js';
 import { Sequencer } from './sequencer.js';
 import { RileySequencer } from './riley.js';
 import {
-  DEFAULT_KNOBS, scorePlan, permutePlan, permuteModule, allowedOctaves, rileyPlayers,
+  DEFAULT_KNOBS, scorePlan, permutePlan, permuteModule, allowedOctaves, rileyPlayers, playerPans,
   randomSeed, mulberry32, encodeState, decodeState,
 } from './permute.js';
 import { knob, meter, cellPreview, colorFor, dbamp, el, formatTime } from './ui.js';
@@ -73,7 +73,14 @@ async function init() {
     riley: null,
   };
   if (mode === 'riley' && !state.riley) state.riley = scoreRiley(SCORE_SEED);
-  if (mode === 'riley') state.riley.entrySpread ??= model.riley.entrySpread;   // links from before entries existed
+  if (mode === 'riley') {
+    state.riley.entrySpread ??= model.riley.entrySpread;   // links from before entries existed
+    // Links from before player pans: spread the players as a permutation would.
+    if (state.riley.players.some(p => p.pan == null)) {
+      const pans = playerPans(state.riley.players.length, state.knobs.pan ?? DEFAULT_KNOBS.pan, mulberry32(state.seed));
+      state.riley.players.forEach((p, i) => { p.pan ??= pans[i]; });
+    }
+  }
 
   seq = mode === 'riley'
     ? new RileySequencer(engine, modules, () => state.plan, () => ({ ...state.riley, seed: state.seed }))
@@ -85,8 +92,8 @@ async function init() {
   document.body.classList.toggle('is-riley', mode === 'riley');
   $('table').classList.toggle('is-riley', mode === 'riley');
   if (mode === 'riley') {
-    $('perm-hint').innerHTML = 'A permutation hands each player a new SynthDef from the .scd’s list, and the knobs vary each module’s level, octave and pan. The knobs take effect on the next <strong>New permutation</strong> (or seed); they don’t change the modules on their own. The seed also decides every player’s choices, so the same seed gives the same performance.';
-    $('mod-hint').textContent = 'Dots show which module each player is on. Level, octave, pan, mute and solo apply to a module whoever is playing it.';
+    $('perm-hint').innerHTML = 'A permutation hands each player a new SynthDef from the .scd’s list and a new place in the stereo field (Pan spread sets how wide), and the knobs vary each module’s level and octave. The knobs take effect on the next <strong>New permutation</strong> (or seed); they don’t change the modules on their own. The seed also decides every player’s choices, so the same seed gives the same performance.';
+    $('mod-hint').textContent = 'Dots show which module each player is on. Level, octave, mute and solo apply to a module whoever is playing it; pan belongs to each player (in the Players panel).';
   }
 
   buildHeader();
@@ -333,7 +340,7 @@ function buildPlayers() {
 function setPlayerCount(n) {
   const players = state.riley.players;
   if (n < players.length) players.length = n;
-  const extra = rileyPlayers(n, rileyPool(), state.seed + n);
+  const extra = rileyPlayers(n, rileyPool(), state.seed + n, state.knobs.pan);
   while (players.length < n) players.push(extra[players.length]);
   seq.setPlayerCount();   // takes effect at once if the piece is playing or paused
   renderPlayers();
@@ -348,7 +355,12 @@ function renderPlayers() {
     for (const name of instruments) select.append(el('option', { value: name }, name));
     select.value = pl.instrument;
     const where = el('span', { class: 'where' }, '–');
-    const chip = el('div', { class: 'player' }, el('b', {}, `P${p + 1}`), select, where);
+    const pan = knob({
+      label: `Pan for player ${p + 1}`, min: -1, max: 1, step: 0.05, value: pl.pan ?? 0, mini: true, bipolar: true,
+      format: fmtPan,
+      onInput: v => { pl.pan = v; pushPans(); saveHash(); },
+    });
+    const chip = el('div', { class: 'player' }, el('b', {}, `P${p + 1}`), select, pan.el, where);
     chip.style.setProperty('--c', colorFor(pl.instrument));
     select.addEventListener('change', () => {
       pl.instrument = select.value;
@@ -359,6 +371,7 @@ function renderPlayers() {
     playerChips.push({ chip, where, select });
   });
   if (knobsByKey.count) knobsByKey.count.set(state.riley.players.length, false);
+  pushPans();
 }
 
 // ---- Audition -------------------------------------------------------------------
@@ -500,7 +513,7 @@ function applyPermutation(seed) {
   const plan = permutePlan(modules, instruments, state.knobs, seed);
   let riley = null;
   if (mode === 'riley') {
-    riley = { ...state.riley, players: rileyPlayers(state.riley.players.length, rileyPool(), seed) };
+    riley = { ...state.riley, players: rileyPlayers(state.riley.players.length, rileyPool(), seed, state.knobs.pan) };
     // Players bring their own SynthDefs; the rows keep theirs (the pulse's matters).
     plan.forEach((p, i) => { p.instrument = state.plan[i].instrument; });
   }
@@ -636,9 +649,15 @@ function buildRows() {
 const fmtDb = db => `${db > 0 ? '+' : ''}${db.toFixed(1)} dB`;
 const fmtPan = v => (Math.abs(v) < 0.025 ? 'centre' : `${v < 0 ? 'L' : 'R'} ${Math.round(Math.abs(v) * 100)}`);
 
+// Arranged: each module has a pan. Riley mode: each player does (their
+// panners feed the modules), and the modules stay centred.
 function pushPans() {
   const pans = new Array(MAX_MODULES).fill(0);
-  state.plan.forEach((p, i) => { pans[i] = p.pan || 0; });
+  if (mode === 'riley') {
+    engine.setPlayerPans(state.riley.players.map(p => p.pan ?? 0));
+  } else {
+    state.plan.forEach((p, i) => { pans[i] = p.pan || 0; });
+  }
   engine.setPans(pans);
 }
 

@@ -145,9 +145,9 @@ main { padding: 18px 24px 8px; display: grid; grid-template-columns: minmax(0, 1
 .players { padding: 18px 20px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
 .players-head { display: flex; justify-content: space-between; align-items: center; gap: 28px; }
 .players-knobs { display: flex; gap: 18px; }
-.player-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); gap: 8px; margin-top: 14px; }
+.player-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(214px, 1fr)); gap: 8px; margin-top: 14px; }
 .player {
-  display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px;
+  display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 8px;
   padding: 6px 8px; border: 1px solid var(--line-2); border-left: 4px solid var(--c); border-radius: 8px; background: var(--bg);
 }
 .player b { font: 600 12px var(--mono); color: var(--c); }
@@ -158,10 +158,10 @@ main { padding: 18px 24px 8px; display: grid; grid-template-columns: minmax(0, 1
 .lane-players { position: absolute; inset: 0; display: flex; align-items: center; gap: 3px; padding-left: 4px; flex-wrap: wrap; align-content: center; }
 .lane-players i { width: 10px; height: 10px; border-radius: 50%; background: var(--pc); box-shadow: 0 0 0 1px var(--panel); }
 
-/* Riley mode: each player keeps one SynthDef and its own repeat counts, so
-   the per-module SynthDef and Repeats columns don't apply. */
-.table.is-riley { --cols: 48px 100px 58px 164px 34px 84px 88px minmax(200px, 1fr); }
-.table.is-riley .c-inst, .table.is-riley .c-reps,
+/* Riley mode: each player keeps one SynthDef, its own repeat counts and its
+   own pan, so the per-module SynthDef, Repeats and Pan columns don't apply. */
+.table.is-riley { --cols: 48px 100px 58px 164px 84px 88px minmax(200px, 1fr); }
+.table.is-riley .c-inst, .table.is-riley .c-reps, .table.is-riley .c-pan, .table.is-riley .row > .knob-mini,
 .table.is-riley .row > select.inst:not(.oct), .table.is-riley .row > .reps,
 .table.is-riley .lane-bar, .table.is-riley .playhead, .table.is-riley .cue { display: none; }
 .table.is-riley .lane, .table.is-riley .ruler { cursor: default; }
@@ -309,7 +309,7 @@ footer strong { color: var(--text); font-weight: 600; }
 
 @media (max-width: 1100px) {
   :root { --cols: 44px 136px 58px 104px minmax(120px, 1fr) 34px 72px 88px; }
-  .table.is-riley { --cols: 44px 58px minmax(120px, 1fr) 34px 72px 88px; }
+  .table.is-riley { --cols: 44px 58px minmax(120px, 1fr) 72px 88px; }
   .c-cell, .cell, .c-lane, .lane, .playhead, .cue { display: none; }
 }
 
@@ -319,7 +319,7 @@ footer strong { color: var(--text); font-weight: 600; }
   .modules, .perm, .players, .audition { padding: 14px 12px; }
   /* Each row becomes two lines: the controls, then the level slider. */
   :root { --cols: 40px 1fr 58px 96px; }
-  .table.is-riley { --cols: 40px 58px 34px 1fr auto; }
+  .table.is-riley { --cols: 40px 58px 1fr auto; }
   .row { height: auto; padding: 8px 4px; row-gap: 8px; }
   .row-head { display: none; }
   .row > .vol { grid-column: 1 / -1; order: 1; }
