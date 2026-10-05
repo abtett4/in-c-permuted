@@ -148,7 +148,7 @@ export function encodeState(state) {
   const compact = {
     v: 4,
     mo: state.mode,
-    r: state.riley ? [state.riley.minStay, state.riley.maxStay, state.riley.maxLead, state.riley.players.map(p => p.instrument), state.riley.entrySpread, state.riley.players.map(p => p.pan ?? 0), state.riley.players.map(p => p.oct ?? 0), state.riley.restChance, state.riley.restMin, state.riley.restMax, state.riley.endHold, state.riley.endSpread] : null,
+    r: state.riley ? [state.riley.minStay, state.riley.maxStay, state.riley.maxLead, state.riley.players.map(p => p.instrument), state.riley.entrySpread, state.riley.players.map(p => p.pan ?? 0), state.riley.players.map(p => p.oct ?? 0), state.riley.restChance, state.riley.restMin, state.riley.restMax, state.riley.endHold, state.riley.endSpread, state.riley.joinChance] : null,
     s: state.seed,
     k: [state.knobs.spread, state.knobs.shuffle, state.knobs.variance, state.knobs.drift, state.knobs.octaves, state.knobs.pan],
     t: state.tempo,
@@ -166,7 +166,7 @@ export function decodeState(str, modules) {
     if (![1, 2, 3, 4].includes(json.v) || !Array.isArray(json.m) || json.m.length !== modules.length) return null;
     return {
       mode: json.mo ?? 'arranged',
-      riley: json.r ? { minStay: json.r[0], maxStay: json.r[1], maxLead: json.r[2], players: json.r[3].map((instrument, i) => ({ instrument, pan: json.r[5]?.[i], oct: json.r[6]?.[i] ?? 0 })), entrySpread: json.r[4], restChance: json.r[7], restMin: json.r[8], restMax: json.r[9], endHold: json.r[10], endSpread: json.r[11] } : null,
+      riley: json.r ? { minStay: json.r[0], maxStay: json.r[1], maxLead: json.r[2], players: json.r[3].map((instrument, i) => ({ instrument, pan: json.r[5]?.[i], oct: json.r[6]?.[i] ?? 0 })), entrySpread: json.r[4], restChance: json.r[7], restMin: json.r[8], restMax: json.r[9], endHold: json.r[10], endSpread: json.r[11], joinChance: json.r[12] } : null,
       seed: json.s,
       knobs: {
         spread: json.k[0], shuffle: json.k[1], variance: json.k[2], drift: json.k[3],

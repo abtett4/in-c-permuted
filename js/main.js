@@ -85,6 +85,7 @@ async function init() {
     state.riley.restMax ??= model.riley.restRange[1];
     state.riley.endHold ??= model.riley.endHold;           // ... and before the ending
     state.riley.endSpread ??= model.riley.endSpread;
+    state.riley.joinChance ??= model.riley.joinChance;     // ... and before joining in step
     // Links from before player pans: spread the players as a permutation would.
     if (state.riley.players.some(p => p.pan == null)) {
       const pans = playerPans(state.riley.players.length, state.knobs.pan ?? DEFAULT_KNOBS.pan, mulberry32(state.seed));
@@ -93,7 +94,7 @@ async function init() {
   }
 
   seq = mode === 'riley'
-    ? new RileySequencer(engine, modules, () => state.plan, () => ({ ...state.riley, seed: state.seed, octRange: state.knobs.octaves ?? DEFAULT_KNOBS.octaves, restRange: [state.riley.restMin, state.riley.restMax] }))
+    ? new RileySequencer(engine, modules, () => state.plan, () => ({ ...state.riley, seed: state.seed, octRange: state.knobs.octaves ?? DEFAULT_KNOBS.octaves, restRange: [state.riley.restMin, state.riley.restMax], joinMax: model.riley.joinMax }))
     : new Sequencer(engine, modules, () => state.plan);
   seq.tempo = state.tempo;
   seq.onNote = n => notes.push(n);
@@ -155,6 +156,7 @@ function scoreRiley(seed) {
     restMax: r.restRange[1],
     endHold: r.endHold,
     endSpread: r.endSpread,
+    joinChance: r.joinChance,
     // As written in the .scd: its `octaves` (\vary or a number) and its pan spread.
     players: rileyPlayers(r.nPlayers, pool.length ? pool : instruments, seed, r.panSpread ?? DEFAULT_KNOBS.pan).map(p => ({ ...p, oct: r.octaves })),
   };
@@ -334,6 +336,7 @@ function buildPlayers() {
     ['restChance', 'Rest chance', 0, 1, 0.05, v => `${Math.round(v * 100)}%`, 'How often a player drops out to listen between modules (restChance in the .scd). Riley: “occasionally to drop out and listen.” A player only rests while at least half the group keeps playing, and comes back in on the pulse.'],
     ['restMin', 'Shortest rest', 0, 60, 1, v => `${v} s`, 'The shortest rest between modules (restRange’s first number in the .scd).'],
     ['restMax', 'Longest rest', 0, 60, 1, v => `${v} s`, 'The longest rest between modules (restRange’s second number).'],
+    ['joinChance', 'Join in step', 0, 1, 0.05, v => `${Math.round(v * 100)}%`, 'How often a player arriving on a module where someone is already playing catches them by ear: it listens for at least one full pass, then comes in at the start of that player’s next pass, in step with them (joinChance in the .scd). It doesn’t wait more than joinMax seconds, so long modules are joined less.'],
     ['endHold', 'Together on 53', 0, 120, 1, v => `${v} s`, 'Once everyone has reached module 53, how long the whole group plays it together before anyone drops out (endHold in the .scd).'],
     ['endSpread', 'Drop-outs over', 0, 120, 1, v => (v === 0 ? 'together' : `${v} s`), 'Then players drop out one at a time, in random order, over this many seconds (endSpread in the .scd), leaving the last one alone with the pulse. 0 stops everyone together.'],
   ];
@@ -559,7 +562,7 @@ function applyPlan(seed, plan, riley) {
   if (riley) {
     state.riley = riley;
     renderPlayers();
-    for (const key of ['minStay', 'maxStay', 'maxLead', 'entrySpread', 'restChance', 'restMin', 'restMax', 'endHold', 'endSpread']) knobsByKey[key]?.set(riley[key], false);
+    for (const key of ['minStay', 'maxStay', 'maxLead', 'entrySpread', 'restChance', 'restMin', 'restMax', 'joinChance', 'endHold', 'endSpread']) knobsByKey[key]?.set(riley[key], false);
   }
   seedInput.value = seed;
   rows.forEach((r, i) => { r.refresh(); seq.resync(i); });
@@ -792,7 +795,7 @@ function frame() {
 // player panel.
 function frameRiley(beat) {
   const where = seq.playerRows();   // row index, -1 = not in yet, null = finished
-  const resting = seq.playerResting();
+  const idle = seq.playerIdle();   // 'resting', 'listening' or null
   const byRow = new Map();
   where.forEach((row, p) => {
     if (row == null || row < 0) return;
@@ -801,13 +804,13 @@ function frameRiley(beat) {
   });
   rows.forEach((r, i) => {
     const players = byRow.get(i) || [];
-    const key = players.map(p => `${p}:${state.riley.players[p]?.instrument}:${resting[p]}`).join(',');
+    const key = players.map(p => `${p}:${state.riley.players[p]?.instrument}:${idle[p]}`).join(',');
     if (key === r.dotsKey) return;
     r.dotsKey = key;
     r.dots.replaceChildren(...players.map(p => {
       const inst = state.riley.players[p]?.instrument;
-      const dot = el('i', { title: `Player ${p + 1} (${inst})${resting[p] ? ', resting' : ''}` });
-      if (resting[p]) dot.className = 'is-resting';
+      const dot = el('i', { title: `Player ${p + 1} (${inst})${idle[p] ? `, ${idle[p]}` : ''}` });
+      if (idle[p]) dot.className = 'is-resting';
       dot.style.setProperty('--pc', colorFor(inst));
       return dot;
     }));
@@ -816,8 +819,8 @@ function frameRiley(beat) {
   playerChips.forEach((c, p) => {
     const row = where[p];
     const started = where.length > 0;
-    c.where.textContent = !started ? '–' : row == null ? 'done' : row < 0 ? 'waiting' : resting[p] ? `resting (after ${modules[row].label})` : `on ${modules[row].label}`;
-    c.chip.classList.toggle('is-done', started && (row == null || row < 0 || resting[p]));
+    c.where.textContent = !started ? '–' : row == null ? 'done' : row < 0 ? 'waiting' : idle[p] === 'resting' ? `resting, then ${modules[row].label}` : idle[p] === 'listening' ? `listening on ${modules[row].label}` : `on ${modules[row].label}`;
+    c.chip.classList.toggle('is-done', started && (row == null || row < 0 || !!idle[p]));
   });
 
   // Real elapsed time: unlike beats / tempo, it doesn't jump when the tempo changes.

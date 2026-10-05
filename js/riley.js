@@ -10,7 +10,9 @@
 // someone hasn't arrived yet. Between modules a player sometimes rests
 // (restChance, for restRange seconds, back in on the pulse) as long as at least
 // half the group keeps playing. Once everyone is on 53 they play it together
-// for endHold seconds, then drop out one at a time over endSpread seconds. The
+// for endHold seconds, then drop out one at a time over endSpread seconds. A
+// player arriving where someone is already playing sometimes listens for a pass
+// or so and joins them in step (joinChance, joinMax). The
 // pulse plays until every player has finished.
 //
 // Notes are scheduled ahead of time like the arranged sequencer, but always in
@@ -110,10 +112,11 @@ export class RileySequencer {
     return this.players.map(v => (v.done ? null : v.entry > beat ? -1 : this.order[v.i]));
   }
 
-  // Which players are resting between modules right now.
-  playerResting() {
+  // Which players are silent right now: 'resting' between modules, or
+  // 'listening' before joining someone in step; null when playing.
+  playerIdle() {
     const beat = this.beat;
-    return this.players.map(v => !!(v.resting && !v.done && v.beat > beat));
+    return this.players.map(v => (v.done || v.beat <= beat ? null : v.resting ? 'resting' : v.listening ? 'listening' : null));
   }
 
   // Riley mode always starts from the beginning: where players are depends on
@@ -318,7 +321,14 @@ export class RileySequencer {
         v.reps = this.passesFor(m, r);
         v.passes = 0;
         v.pos = v.i;
+        const join = this.joinBeat(v, m, r);
+        if (join != null) {
+          v.beat = join;
+          v.listening = true;
+          return false;
+        }
       }
+      v.listening = false;
       const slowest = Math.min(...this.players.map(p => p.pos));
       // On 53: wait for everyone, play together, then drop out in turn.
       if (v.i === last && this.endAt == null && slowest === last) this.endAt = v.beat;
@@ -326,6 +336,7 @@ export class RileySequencer {
         ? v.reps > 0 || v.i - slowest >= r.maxLead
         : this.endAt == null || v.beat < this.dropBeat(v, r));
       if (keepGoing) {
+        v.passStart = v.beat;
         v.reps = Math.max(0, v.reps - 1);
         v.passes++;
         return true;
@@ -338,6 +349,21 @@ export class RileySequencer {
         return false;
       }
     }
+  }
+
+  // A player arriving on a module sometimes (joinChance) catches someone
+  // already playing it by ear: it listens for at least one full pass, then
+  // comes in at the start of that player's next pass, in step with them.
+  // Returns that beat, or null to start straight away (nobody to join, the
+  // dice said no, or it would take more than joinMax seconds).
+  joinBeat(v, m, r) {
+    const others = this.players.filter(q => q !== v && !q.done && q.pos === v.i && q.i === v.i
+      && !q.resting && !q.listening && q.passStart != null);
+    if (!others.length || this.rand() >= (r.joinChance ?? 0)) return null;
+    const q = others[Math.floor(this.rand() * others.length)];
+    const L = m.cellBeats;
+    const join = q.passStart + L * Math.ceil((v.beat + L - q.passStart) / L - 1e-9);
+    return join - v.beat <= (r.joinMax ?? 0) * this.tempo ? join : null;
   }
 
   // When a player stops at the end: endHold seconds after everyone reached 53,
