@@ -17,6 +17,10 @@
     <div class="title">
       <h1><em>In C</em></h1>
       <p>Terry Riley, 1964 &middot; arranged in SuperCollider by Alan Tett &middot; live in your browser</p>
+      <div class="modes" role="group" aria-label="Form">
+        <a href="?mode=riley" id="mode-riley" title="Players move through all 53 modules in order, following Riley's performing directions (Tett_A_In_C_2026.scd)">Riley mode</a>
+        <a href="?mode=arranged" id="mode-arranged" title="The fixed Ptpar timeline of the 2019 arrangement (Tett_A_In_C.scd)">Arranged (2019)</a>
+      </div>
     </div>
 
     <div class="transport">
@@ -56,6 +60,17 @@
       <div id="viz"></div>
     </section>
 
+    <section class="players" id="players-section" aria-labelledby="players-h" hidden>
+      <div class="players-head">
+        <div>
+          <h2 id="players-h">Players</h2>
+          <p class="hint">Each player works through modules 1–53 in order, staying on each for a random stretch of time, waiting if they get too far ahead of the slowest player, and waiting on 53 until everyone arrives. Changes to the number of players take effect the next time the piece starts.</p>
+        </div>
+        <div class="players-knobs" id="players-knobs"></div>
+      </div>
+      <div class="player-grid" id="player-grid"></div>
+    </section>
+
     <section class="perm" aria-labelledby="perm-h">
       <div class="perm-main">
         <h2 id="perm-h">Permutation</h2>
@@ -68,7 +83,7 @@
           <label class="seed">Seed <input id="seed" type="number" min="0" max="999999" inputmode="numeric"></label>
           <button id="share" class="btn btn-ghost" title="Copy a link that opens this exact version">Copy link</button>
         </div>
-        <p class="hint">A permutation re-rolls each module's <code>[a, b].choose</code> repeat count, then the knobs push it further from the score. The same seed always gives the same permutation.</p>
+        <p class="hint" id="perm-hint">A permutation re-rolls each module's <code>[a, b].choose</code> repeat count, then the knobs push it further from the score. The same seed always gives the same permutation.</p>
       </div>
       <div class="perm-knobs" id="perm-knobs"></div>
     </section>
@@ -76,11 +91,11 @@
     <section class="modules" aria-labelledby="mod-h">
       <div class="modules-head">
         <h2 id="mod-h">Modules</h2>
-        <p class="hint">Click the timeline to choose where Play starts (the <code>offset</code> in your <code>.scd</code>). Changes apply live.</p>
+        <p class="hint" id="mod-hint">Click the timeline to choose where Play starts (the <code>offset</code> in your <code>.scd</code>). Changes apply live.</p>
       </div>
       <div class="table" id="table">
         <div class="row row-head">
-          <div>#</div><div class="c-cell">Phrase</div><div>SynthDef</div><div>Oct</div><div>Repeats</div><div>Level</div><div>Pan</div><div class="c-meter">Meter</div><div class="c-btns"></div>
+          <div>#</div><div class="c-cell">Phrase</div><div class="c-inst">SynthDef</div><div>Oct</div><div class="c-reps">Repeats</div><div>Level</div><div>Pan</div><div class="c-meter">Meter</div><div class="c-btns"></div>
           <div class="c-lane"><div class="ruler" id="ruler"></div></div>
         </div>
         <div id="rows"></div>
@@ -91,7 +106,7 @@
   </main>
 
   <footer>
-    <p><strong>How this works.</strong> The score (every <code>Pbind</code>, its repeat counts and the <code>Ptpar</code> entry times) is read straight from <a href="sc/Tett_A_In_C.scd"><code>Tett_A_In_C.scd</code></a> when the page loads. The SynthDefs are compiled from the same file into <code>.scsyndef</code> files and run on <a href="https://github.com/samaaron/supersonic">SuperSonic</a>, which is SuperCollider's own synthesis server compiled to WebAssembly. Nothing is streamed: every sound is synthesized on this computer.</p>
+    <p><strong>How this works.</strong> The score is read straight from the SuperCollider file when the page loads: every <code>Pbind</code>, plus either the player rules of Riley mode (<a href="sc/Tett_A_In_C_2026.scd"><code>Tett_A_In_C_2026.scd</code></a>) or the <code>Ptpar</code> timeline of the 2019 arrangement (<a href="sc/Tett_A_In_C.scd"><code>Tett_A_In_C.scd</code></a>). The SynthDefs are compiled from the 2026 file into <code>.scsyndef</code> files and run on <a href="https://github.com/samaaron/supersonic">SuperSonic</a>, which is SuperCollider's own synthesis server compiled to WebAssembly. Nothing is streamed: every sound is synthesized on this computer.</p>
     <p>For a screen share, tick <em>Share sound</em> in Zoom so the class can hear it. SynthDefs: <em>pluck</em> after John Drumheller's Karplus-Strong example; <em>star</em> from <a href="https://sccode.org/1-522">sccode.org/1-522</a>. Visuals in <a href="https://p5js.org">p5.js</a>.</p>
   </footer>
 </body>

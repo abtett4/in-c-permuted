@@ -1,8 +1,14 @@
 // Reads the score straight out of the SuperCollider file.
 //
 // This is not a full sclang interpreter. It understands the subset the piece
-// is written in: Pbind / Pseq / Rest / [a, b].choose for the modules, and
-// Ptpar([time, Ppar([songN], n), ...]).play(TempoClock(t)) for the form.
+// is written in: Pbind / Pseq / Rest / [a, b].choose for the modules, and one
+// of two forms for the whole piece:
+//
+//   arranged:   Ptpar([time, Ppar([songN], n), ...]).play(TempoClock(t))
+//   Riley mode: Ppar([pulse] ++ nPlayers.collect { |p| player.(p, [\a, \b].choose) })
+//                 .play(TempoClock(t)), with the module order in an array of
+//                 the songN Pbinds and the player's rules in its function.
+//
 // SynthDef names are collected so the page knows which instruments exist.
 
 export function parseScd(src) {
@@ -20,44 +26,201 @@ export function parseScd(src) {
     }
   }
 
-  // The score lives in the top-level ( ... ) block that contains Ptpar.
+  // The score lives in the last top-level ( ... ) block that has Pbinds in it.
   const blocks = topLevelBlocks(tokens);
-  const block = [...blocks].reverse().find(b => b.some(t => t.v === 'Ptpar'));
-  if (!block) throw new Error('Could not find a Ptpar([...]).play block in the .scd file.');
+  const block = [...blocks].reverse().find(b => b.some(t => t.v === 'Pbind'));
+  if (!block) throw new Error('Could not find a ( ... ) block of Pbinds in the .scd file.');
 
   const env = {};
-  let form = null;
+  const plays = [];
   for (const stmt of splitStatements(block)) {
-    if (!stmt.length || stmt[0].v === 'var' || stmt[0].v === 'arg') continue;
-    let p;
+    if (!stmt.length || stmt[0].v === 'arg') continue;
     try {
-      p = new ExprParser(stmt, env);
-      if (stmt.length > 2 && stmt[0].type === 'ident' && stmt[1].v === '=') {
+      if (stmt[0].v === 'var') {
+        readVars(stmt, env);
+      } else if (stmt.length > 2 && stmt[0].type === 'ident' && stmt[1].v === '=') {
+        const p = new ExprParser(stmt, env);
         p.pos = 2;
         const v = p.parseExpr();
         if (v && typeof v === 'object' && !Array.isArray(v)) v.varName ??= stmt[0].v;
         env[stmt[0].v] = v;
       } else {
-        const v = p.parseExpr();
-        if (v && (v.type === 'play' || v.type === 'Ptpar')) form = v;
+        const v = new ExprParser(stmt, env).parseExpr();
+        if (v && v.type === 'play') plays.push(v);
       }
     } catch (err) {
-      warnings.push(`Skipped a statement I couldn't read: ${err.message}`);
+      // Statements that don't build patterns (pos = 0 ! nPlayers, etc.) are
+      // fine to skip; only mention the ones that look like part of the score.
+      if (stmt.some(t => ['Pbind', 'Ptpar', 'Ppar'].includes(t.v))) {
+        warnings.push(`Skipped a statement I couldn't read: ${err.message}`);
+      }
     }
   }
-  if (!form) throw new Error('Found the score block but could not read its Ptpar.');
 
+  const play = plays[plays.length - 1];
+  if (!play) throw new Error('Found the Pbinds but no Ptpar(...).play or Ppar(...).play that plays them.');
   let tempo = 1;
-  let ptpar = form;
-  if (form.type === 'play') {
-    ptpar = form.target;
-    const clock = form.args[0];
-    if (clock && clock.type === 'TempoClock' && typeof clock.args[0] === 'number') tempo = clock.args[0];
+  const clock = play.args[0];
+  if (clock && clock.type === 'TempoClock' && typeof clock.args[0] === 'number') tempo = clock.args[0];
+
+  let arranged = null;
+  let riley = null;
+  if (play.target && play.target.type === 'Ptpar') arranged = readPtpar(play.target, env, warnings);
+  else if (play.target && play.target.type === 'Ppar') riley = readRiley(play.target, env, warnings);
+  else throw new Error('The piece should be played with Ptpar([...]) or Ppar([...]).');
+
+  return { tempo, synthDefNames, warnings, arranged, riley };
+}
+
+// `var a, b = 12, c = 0.39;`: keep the initial values the score uses.
+function readVars(stmt, env) {
+  const parts = [[]];
+  let depth = 0;
+  for (const tok of stmt.slice(1)) {
+    if (tok.type === 'op' && '([{'.includes(tok.v)) depth++;
+    if (tok.type === 'op' && ')]}'.includes(tok.v)) depth--;
+    if (depth === 0 && tok.v === ',') parts.push([]);
+    else parts[parts.length - 1].push(tok);
   }
-  if (!ptpar || ptpar.type !== 'Ptpar' || !Array.isArray(ptpar.args[0])) {
+  for (const part of parts) {
+    if (part.length > 2 && part[0].type === 'ident' && part[1].v === '=') {
+      try {
+        const p = new ExprParser(part, env);
+        p.pos = 2;
+        env[part[0].v] = p.parseExpr();
+      } catch { /* not a value we need */ }
+    }
+  }
+}
+
+function labelModules(modules) {
+  modules.forEach((m, i) => {
+    m.index = i;
+    const n = /(\d+)$/.exec(m.name);
+    m.number = n ? Number(n[1]) : i;
+    m.label = m.number === 0 ? 'Pulse' : String(m.number);
+  });
+  return modules;
+}
+
+// ---- Riley mode --------------------------------------------------------------
+
+const RILEY_DEFAULTS = { nPlayers: 8, minStay: 45, maxStay: 90, maxLead: 3 };
+
+function readRiley(ppar, env, warnings) {
+  const arg = ppar.args[0];
+  let pulsePbind = null;
+  let collect = arg;
+  if (arg && arg.type === 'binop' && arg.op === '++') {
+    pulsePbind = Array.isArray(arg.a) ? arg.a[0] : null;
+    collect = arg.b;
+  }
+  if (!collect || collect.type !== 'method' || collect.name !== 'collect') {
+    throw new Error('In Riley mode, Ppar should be given [pulse] ++ nPlayers.collect { ... }.');
+  }
+
+  const nPlayers = typeof collect.target === 'number' ? collect.target : RILEY_DEFAULTS.nPlayers;
+  const body = collect.args.find(a => a && a.type === 'func');
+  const bodyTokens = body ? body.tokens : [];
+  const pool = chooseList(bodyTokens);
+
+  // The player's rules live in the function it calls (player.(p, ...)).
+  const callee = bodyTokens.find((t, i) => t.type === 'ident' && bodyTokens[i + 1]?.v === '.' && bodyTokens[i + 2]?.v === '(');
+  const rules = callee && env[callee.v] && env[callee.v].type === 'func' ? env[callee.v].tokens : [];
+  const stay = rrandArgs(rules);
+  const lead = leadLimit(rules);
+
+  // The module order: the variable holding the longest array of Pbinds.
+  let order = [];
+  for (const v of Object.values(env)) {
+    const list = Array.isArray(v) ? v : v && v.type === 'method' && Array.isArray(v.target) ? v.target : null;
+    if (list && list.length > order.length && list.every(x => x && x.type === 'Pbind')) order = list;
+  }
+  if (!order.length) throw new Error('Riley mode: could not find the array of module Pbinds (modules = [song1, ...]).');
+
+  const modules = [];
+  if (pulsePbind && pulsePbind.type === 'Pbind') {
+    modules.push(readPulse(pulsePbind));
+  } else {
+    warnings.push('Riley mode: no pulse Pbind found before ++; playing without a pulse.');
+  }
+  for (const pb of order) {
+    try {
+      modules.push({ name: pb.varName ?? `pattern${modules.length}`, start: 0, pparChoices: [1], ...readPbind(pb) });
+    } catch (err) {
+      warnings.push(`${pb.varName}: ${err.message}`);
+    }
+  }
+
+  return {
+    nPlayers,
+    pool: pool.length ? pool : null,
+    minStay: stay ? stay[0] : RILEY_DEFAULTS.minStay,
+    maxStay: stay ? stay[1] : RILEY_DEFAULTS.maxStay,
+    maxLead: lead ?? RILEY_DEFAULTS.maxLead,
+    hasPulse: !!(pulsePbind && pulsePbind.type === 'Pbind'),
+    modules: labelModules(modules),
+  };
+}
+
+// The pulse: \instrument, \midinote and a \dur that may be wrapped in
+// Pwhile({ ... }, Pseq([1/8], 1)) so it stops when the players do.
+function readPulse(pbind) {
+  const a = pbind.args;
+  const get = key => { for (let i = 0; i + 1 < a.length; i += 2) if (a[i] && a[i].sym === key) return a[i + 1]; return undefined; };
+  const instrument = get('instrument');
+  const midinote = firstNumber(get('midinote')) ?? 60;
+  const dur = firstNumber(get('dur')) ?? 1 / 8;
+  return {
+    name: 'pulse', start: 0, pparChoices: [1], seqChoices: [Infinity], extras: {},
+    instrument: instrument ? instrument.sym ?? instrument.str : 'default',
+    cell: [{ midinote, dur, rest: false }], cellBeats: dur, isPulse: true,
+  };
+}
+
+function firstNumber(v) {
+  if (typeof v === 'number') return v;
+  if (Array.isArray(v)) { for (const x of v) { const n = firstNumber(x); if (n != null) return n; } return null; }
+  if (v && Array.isArray(v.args)) { for (const x of v.args) { const n = firstNumber(x); if (n != null) return n; } }
+  return null;
+}
+
+// [\a, \b, ...].choose inside a function body -> ['a', 'b', ...]
+function chooseList(tokens) {
+  for (let i = 0; i < tokens.length; i++) {
+    if (tokens[i].v !== ']' || tokens[i + 1]?.v !== '.' || tokens[i + 2]?.v !== 'choose') continue;
+    const syms = [];
+    for (let j = i - 1; j >= 0 && tokens[j].v !== '['; j--) if (tokens[j].type === 'symbol') syms.unshift(tokens[j].v);
+    if (syms.length) return syms;
+  }
+  return [];
+}
+
+// rrand(45, 90) -> [45, 90]
+function rrandArgs(tokens) {
+  for (let i = 0; i + 5 < tokens.length; i++) {
+    const t = tokens.slice(i, i + 6);
+    if (t[0].v === 'rrand' && t[1].v === '(' && t[2].type === 'num' && t[3].v === ',' && t[4].type === 'num' && t[5].v === ')') {
+      return [t[2].v, t[4].v];
+    }
+  }
+  return null;
+}
+
+// ... pos.minItem >= 3 -> 3
+function leadLimit(tokens) {
+  for (let i = 0; i + 3 < tokens.length; i++) {
+    if (tokens[i].v === 'minItem' && tokens[i + 1].v === '>' && tokens[i + 2].v === '=' && tokens[i + 3].type === 'num') return tokens[i + 3].v;
+  }
+  return null;
+}
+
+// ---- Arranged (Ptpar) ----------------------------------------------------------
+
+function readPtpar(ptpar, env, warnings) {
+  if (!Array.isArray(ptpar.args[0])) {
     throw new Error('Ptpar should be given an array of [time, pattern, ...] pairs.');
   }
-
   const list = ptpar.args[0];
   const modules = [];
   for (let i = 0; i + 1 < list.length; i += 2) {
@@ -86,14 +249,7 @@ export function parseScd(src) {
     }
   }
 
-  modules.forEach((m, i) => {
-    m.index = i;
-    const n = /(\d+)$/.exec(m.name);
-    m.number = n ? Number(n[1]) : i;
-    m.label = m.number === 0 ? 'Pulse' : String(m.number);
-  });
-
-  return { tempo, modules, synthDefNames, warnings };
+  return labelModules(modules);
 }
 
 // ---- Pbind -> one module ---------------------------------------------------
@@ -192,7 +348,7 @@ class ExprParser {
     let left = this.parsePostfix();
     for (;;) {
       const tok = this.peek();
-      if (!tok || tok.type !== 'op' || !['+', '-', '*', '/', '%', '**'].includes(tok.v)) return left;
+      if (!tok || tok.type !== 'op' || !['+', '-', '*', '/', '%', '**', '++'].includes(tok.v)) return left;
       this.next();
       const right = this.parsePostfix();
       left = binop(tok.v, left, right);
@@ -203,10 +359,16 @@ class ExprParser {
     let v = this.parsePrimary();
     while (this.peek() && this.peek().v === '.') {
       this.next();
+      if (this.peek() && this.peek().v === '(') {
+        // f.(args): calling a function
+        v = { type: 'call', target: v, args: this.parseArgs() };
+        continue;
+      }
       const name = this.next();
       if (!name || name.type !== 'ident') throw new Error('expected a method name after "."');
       let args = [];
       if (this.peek() && this.peek().v === '(') args = this.parseArgs();
+      if (this.peek() && this.peek().v === '{') args.push(this.parseFunc());   // x.collect { ... }
       if (name.v === 'choose' && Array.isArray(v)) v = { type: 'choose', options: v };
       else if (name.v === 'play') v = { type: 'play', target: v, args };
       else v = { type: 'method', name: name.v, target: v, args };
@@ -229,7 +391,23 @@ class ExprParser {
     return args;
   }
 
+  // { ... }: not evaluated, but its tokens are kept so the Riley-mode reader
+  // can look inside (the instrument list, rrand(45, 90), etc.).
+  parseFunc() {
+    this.expect('{');
+    const start = this.pos;
+    let depth = 1;
+    while (this.peek() && depth > 0) {
+      const t = this.next();
+      if (t.type === 'op' && t.v === '{') depth++;
+      if (t.type === 'op' && t.v === '}') depth--;
+    }
+    if (depth > 0) throw new Error('unclosed {');
+    return { type: 'func', tokens: this.t.slice(start, this.pos - 1) };
+  }
+
   parsePrimary() {
+    if (this.peek() && this.peek().v === '{') return this.parseFunc();
     const tok = this.next();
     if (!tok) throw new Error('unexpected end of expression');
     if (tok.type === 'num') return tok.v;
@@ -266,6 +444,7 @@ class ExprParser {
 }
 
 function binop(op, a, b) {
+  if (op === '++' && Array.isArray(a) && Array.isArray(b)) return [...a, ...b];
   if (typeof a === 'number' && typeof b === 'number') {
     switch (op) {
       case '+': return a + b;
@@ -313,7 +492,7 @@ function stripComments(src) {
 
 function tokenize(code) {
   const tokens = [];
-  const re = /\s+|(\d+(?:\.\d+)?(?:e[+-]?\d+)?)(pi)?|([A-Z]\w*)|([a-z_]\w*)|\\(\w+)|'((?:[^'\\]|\\.)*)'|"((?:[^"\\]|\\.)*)"|\$.|(\*\*|[()[\]{},;.=:+\-*/%!<>|&@#^?~`])/y;
+  const re = /\s+|(\d+(?:\.\d+)?(?:e[+-]?\d+)?)(pi)?|([A-Z]\w*)|([a-z_]\w*)|\\(\w+)|'((?:[^'\\]|\\.)*)'|"((?:[^"\\]|\\.)*)"|\$.|(\*\*|\+\+|[()[\]{},;.=:+\-*/%!<>|&@#^?~`])/y;
   let m;
   re.lastIndex = 0;
   while (re.lastIndex < code.length) {

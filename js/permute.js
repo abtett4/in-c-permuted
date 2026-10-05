@@ -71,13 +71,20 @@ export function randomSeed() {
 }
 
 const pick = (rand, list) => list[Math.floor(rand() * list.length)];
+const finiteOr = (n, fallback) => (Number.isFinite(n) ? n : fallback);   // the Riley pulse repeats forever
+
+// Riley mode: each player's instrument, picked from the .scd's [\a, \b].choose list.
+export function rileyPlayers(n, pool, seed) {
+  const rand = mulberry32(seed ^ 0x5eed);
+  return Array.from({ length: n }, () => ({ instrument: pick(rand, pool) }));
+}
 
 // The piece exactly as written (the .choose calls still roll, seeded).
 export function scorePlan(modules, seed) {
   const rand = mulberry32(seed);
   return modules.map(m => ({
     instrument: m.instrument,
-    reps: pick(rand, m.seqChoices) * pick(rand, m.pparChoices),
+    reps: finiteOr(pick(rand, m.seqChoices) * pick(rand, m.pparChoices), 1),
     gainDb: 0,
     start: m.start,
     octave: 0,
@@ -101,7 +108,7 @@ export function permuteModule(m, instruments, knobs, rand) {
   const octave = pickOctave(m, knobs.octaves ?? 0, rand);
   // The pulse stays centred.
   const pan = m.start === 0 ? 0 : Math.round((rand() * 2 - 1) * (knobs.pan ?? 0) * 20) / 20;
-  return { instrument, reps: Math.max(1, Math.round(base * factor)), gainDb, start, octave, pan };
+  return { instrument, reps: Math.max(1, Math.round(finiteOr(base, 1) * factor)), gainDb, start, octave, pan };
 }
 
 export function permutePlan(modules, instruments, knobs, seed) {
@@ -113,7 +120,9 @@ export function permutePlan(modules, instruments, knobs, seed) {
 
 export function encodeState(state) {
   const compact = {
-    v: 3,
+    v: 4,
+    mo: state.mode,
+    r: state.riley ? [state.riley.minStay, state.riley.maxStay, state.riley.maxLead, state.riley.players.map(p => p.instrument)] : null,
     s: state.seed,
     k: [state.knobs.spread, state.knobs.shuffle, state.knobs.variance, state.knobs.drift, state.knobs.octaves, state.knobs.pan],
     t: state.tempo,
@@ -126,9 +135,12 @@ export function encodeState(state) {
 export function decodeState(str, modules) {
   try {
     const json = JSON.parse(atob(str.replace(/-/g, '+').replace(/_/g, '/')));
-    // Older links (before octaves and pan) still open, at octave 0 and centred.
-    if (![1, 2, 3].includes(json.v) || !Array.isArray(json.m) || json.m.length !== modules.length) return null;
+    // Older links (before octaves, pan and Riley mode) still open: they were
+    // all the arranged form, at octave 0 and centred.
+    if (![1, 2, 3, 4].includes(json.v) || !Array.isArray(json.m) || json.m.length !== modules.length) return null;
     return {
+      mode: json.mo ?? 'arranged',
+      riley: json.r ? { minStay: json.r[0], maxStay: json.r[1], maxLead: json.r[2], players: json.r[3].map(instrument => ({ instrument })) } : null,
       seed: json.s,
       knobs: {
         spread: json.k[0], shuffle: json.k[1], variance: json.k[2], drift: json.k[3],

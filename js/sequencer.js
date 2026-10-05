@@ -141,7 +141,7 @@ function advance(m, p, cur) {
 
 // setInterval in a Worker keeps ticking when the tab isn't focused (main
 // thread timers get throttled to once a second there).
-function makeTicker(fn, ms) {
+export function makeTicker(fn, ms) {
   let worker = null;
   try {
     const src = `let t=null;onmessage=e=>{clearInterval(t);if(e.data)t=setInterval(()=>postMessage(0),${ms});}`;

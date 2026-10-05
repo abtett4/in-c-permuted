@@ -5,7 +5,7 @@
 const SUPERSONIC_VERSION = '0.88.0';
 const CDNS = ['https://cdn.jsdelivr.net/npm/', 'https://unpkg.com/'];
 
-export const MAX_MODULES = 53;     // inc_mixer has this many stereo inputs
+export const MAX_MODULES = 64;     // inc_mixer has this many stereo inputs
 const FIRST_BUS = 64;              // module i plays into buses FIRST_BUS + 2i, +1
 const SYNTH_GROUP = 100;
 const MIXER_GROUP = 101;

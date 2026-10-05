@@ -1,21 +1,30 @@
 import { parseScd } from './scd.js';
 import { Engine, MAX_MODULES } from './engine.js';
 import { Sequencer } from './sequencer.js';
-import { DEFAULT_KNOBS, scorePlan, permutePlan, permuteModule, allowedOctaves, randomSeed, mulberry32, encodeState, decodeState } from './permute.js';
+import { RileySequencer } from './riley.js';
+import {
+  DEFAULT_KNOBS, scorePlan, permutePlan, permuteModule, allowedOctaves, rileyPlayers,
+  randomSeed, mulberry32, encodeState, decodeState,
+} from './permute.js';
 import { knob, meter, cellPreview, colorFor, dbamp, el, formatTime } from './ui.js';
 import { startViz } from './viz.js';
 import { Recorder } from './recorder.js';
 
-const SCD_PATH = 'sc/Tett_A_In_C.scd';
+// Two forms of the piece, each read from its own .scd:
+//   riley:    players move through all 53 modules (the 2026 file's Riley mode)
+//   arranged: the fixed Ptpar timeline of the 2019 arrangement
+const FILES = { riley: 'sc/Tett_A_In_C_2026.scd', arranged: 'sc/Tett_A_In_C.scd' };
 const SCORE_SEED = 1964;
 
 const $ = id => document.getElementById(id);
 const engine = new Engine();
 const recorder = new Recorder(engine);
 
-let model;            // parsed .scd: { tempo, modules, synthDefNames }
+let mode;             // 'riley' | 'arranged'
+let model;            // parsed .scd
+let modules;          // the rows: model.arranged or model.riley.modules
 let instruments;      // SynthDef names offered in the dropdowns
-let state;            // { seed, knobs, tempo, masterDb, plan: [...] }
+let state;            // { mode, seed, knobs, tempo, masterDb, plan, riley }
 let seq;
 let cueBeat = 0;
 const rows = [];
@@ -26,34 +35,57 @@ let levels = new Float32Array(MAX_MODULES + 2);
 init().catch(err => showStatus(err.message, true));
 
 async function init() {
-  const res = await fetch(SCD_PATH);
-  if (!res.ok) throw new Error(`Couldn't load ${SCD_PATH} (HTTP ${res.status}).`);
+  // Links shared before Riley mode existed have no ?mode= but carry an
+  // arranged-form state, so they still open the arranged form.
+  const asked = new URLSearchParams(location.search).get('mode') ?? hashMode();
+  mode = asked === 'arranged' ? 'arranged' : 'riley';
+  $(`mode-${mode}`).setAttribute('aria-current', 'page');
+
+  const res = await fetch(FILES[mode]);
+  if (!res.ok) throw new Error(`Couldn't load ${FILES[mode]} (HTTP ${res.status}).`);
   model = parseScd(await res.text());
-  if (!model.modules.length) throw new Error(`No modules found in ${SCD_PATH}.`);
-  if (model.modules.length > MAX_MODULES) throw new Error(`The mixer has ${MAX_MODULES} channels but the score has ${model.modules.length} modules.`);
   model.warnings.forEach(w => console.warn(w));
+  if (mode === 'riley' && !model.riley) throw new Error(`${FILES.riley} doesn't end with a Riley-mode Ppar(...).play.`);
+  if (mode === 'arranged' && !model.arranged) throw new Error(`${FILES.arranged} doesn't end with a Ptpar(...).play.`);
+  modules = mode === 'riley' ? model.riley.modules : model.arranged;
+  if (!modules.length) throw new Error(`No modules found in ${FILES[mode]}.`);
+  if (modules.length > MAX_MODULES) throw new Error(`The mixer has ${MAX_MODULES} channels but the score has ${modules.length} modules.`);
   instruments = model.synthDefNames;
 
-  state = (location.hash.length > 1 && decodeState(location.hash.slice(1), model.modules)) || {
+  const saved = location.hash.length > 1 ? decodeState(location.hash.slice(1), modules) : null;
+  state = saved && saved.mode === mode ? { ...saved, mode } : {
+    mode,
     seed: SCORE_SEED,
     knobs: { ...DEFAULT_KNOBS },
     tempo: model.tempo,
     masterDb: -3,
-    plan: scorePlan(model.modules, SCORE_SEED),
+    plan: scorePlan(modules, SCORE_SEED),
+    riley: null,
   };
+  if (mode === 'riley' && !state.riley) state.riley = scoreRiley(SCORE_SEED);
 
-  seq = new Sequencer(engine, model.modules, () => state.plan);
+  seq = mode === 'riley'
+    ? new RileySequencer(engine, modules, () => state.plan, () => ({ ...state.riley, seed: state.seed }))
+    : new Sequencer(engine, modules, () => state.plan);
   seq.tempo = state.tempo;
   seq.onNote = n => notes.push(n);
   seq.onEnd = () => { setPlaying(false); stopRecording(); };
 
+  document.body.classList.toggle('is-riley', mode === 'riley');
+  $('table').classList.toggle('is-riley', mode === 'riley');
+  if (mode === 'riley') {
+    $('perm-hint').textContent = 'A permutation hands each player a new SynthDef from the .scd’s list, and the knobs vary each module’s level, octave and pan. The seed also decides every player’s choices, so the same seed gives the same performance.';
+    $('mod-hint').textContent = 'Dots show which module each player is on. Level, octave, pan, mute and solo apply to a module whoever is playing it.';
+  }
+
   buildHeader();
+  if (mode === 'riley') buildPlayers();
   buildPermutationPanel();
   buildRows();
   layoutLanes();
   bindTransport();
 
-  const pitches = model.modules.flatMap(m => m.cell.filter(e => !e.rest).flatMap(e => [].concat(e.midinote)));
+  const pitches = modules.flatMap(m => m.cell.filter(e => !e.rest).flatMap(e => [].concat(e.midinote)));
   startViz($('viz'), vizFrame, [Math.min(...pitches), Math.max(...pitches)]);
 
   engine.onLevels = vals => { levels = vals; };
@@ -64,7 +96,34 @@ async function init() {
   new ResizeObserver(layoutLanes).observe($('table'));
 
   // Handy for poking at things from the browser console.
-  window.inC = { engine, seq, recorder, model, get state() { return state; } };
+  window.inC = { engine, seq, recorder, model, modules, get state() { return state; } };
+}
+
+function hashMode() {
+  try {
+    const json = JSON.parse(atob(location.hash.slice(1).replace(/-/g, '+').replace(/_/g, '/')));
+    return json.mo ?? 'arranged';
+  } catch {
+    return null;
+  }
+}
+
+// Riley mode as the .scd writes it: its player count, stay and lead rules,
+// and each player's SynthDef from its [\a, \b].choose list.
+function scoreRiley(seed) {
+  const r = model.riley;
+  const pool = (r.pool || instruments).filter(n => instruments.includes(n));
+  return {
+    minStay: r.minStay,
+    maxStay: r.maxStay,
+    maxLead: r.maxLead,
+    players: rileyPlayers(r.nPlayers, pool.length ? pool : instruments, seed),
+  };
+}
+
+function rileyPool() {
+  const pool = (model.riley.pool || instruments).filter(n => instruments.includes(n));
+  return pool.length ? pool : instruments;
 }
 
 // ---- Header: transport, tempo, master -------------------------------------
@@ -111,7 +170,7 @@ async function ensureEngine() {
   $('play').disabled = true;
   try {
     const { instruments: loaded, failed } = await engine.boot(instruments, msg => showStatus(msg));
-    if (failed.length) showStatus(`Couldn't load SynthDef${failed.length > 1 ? 's' : ''}: ${failed.join(', ')}. Modules using ${failed.length > 1 ? 'them' : 'it'} will be silent.`, true);
+    if (failed.length) showStatus(`Couldn't load SynthDef${failed.length > 1 ? 's' : ''}: ${failed.join(', ')}. Notes using ${failed.length > 1 ? 'them' : 'it'} will be silent.`, true);
     if (!loaded.length) throw new Error('No SynthDefs loaded.');
     engine.setMaster(dbamp(state.masterDb));
     engine.setLimiter($('limiter').checked);
@@ -131,14 +190,23 @@ async function ensureEngine() {
 async function play() {
   if (!(await ensureEngine())) return;
   seq.setTempo(state.tempo);
-  seq.play(cueBeat);
+  if (mode === 'riley') {
+    if (seq.paused) seq.resume();
+    else seq.play();
+  } else {
+    seq.play(cueBeat);
+  }
   setPlaying(true);
 }
 
 // Pause keeps your place; Play carries on from there.
 async function pause() {
-  cueBeat = snap(seq.beat);
-  await seq.stop();
+  if (mode === 'riley') {
+    await seq.pause();
+  } else {
+    cueBeat = snap(seq.beat);
+    await seq.stop();
+  }
   setPlaying(false);
 }
 
@@ -148,6 +216,34 @@ async function stop() {
   setPlaying(false);
   if (recorder.recording) setTimeout(stopRecording, 2000);   // let the last notes ring out
 }
+
+function setPlaying(on) {
+  if (!on) dropUnplayedNotes();
+  const b = $('play');
+  b.classList.toggle('is-playing', on);
+  b.querySelector('span').textContent = on ? 'Pause' : 'Play';
+  b.querySelector('svg').innerHTML = on
+    ? '<rect x="3.5" y="2.5" width="3.2" height="11" rx="0.8"/><rect x="9.3" y="2.5" width="3.2" height="11" rx="0.8"/>'
+    : '<path d="M4 2.5v11l9-5.5z"/>';
+  $('stop').disabled = !on && cueBeat === 0 && !(mode === 'riley' && seq.paused);
+  $('playhead').hidden = !on;
+  if (!on && mode === 'arranged') seq.anchorBeat = cueBeat;
+}
+
+async function cueTo(beat) {
+  if (mode === 'riley') return;   // where players are depends on everything before
+  cueBeat = snap(Math.max(0, beat));
+  if (seq.playing) {
+    await seq.stop();
+    dropUnplayedNotes();
+    seq.play(cueBeat);
+  } else {
+    seq.anchorBeat = cueBeat;
+    $('stop').disabled = cueBeat === 0;
+  }
+}
+
+const snap = b => Math.round(b * 4) / 4;   // to the pulse
 
 // ---- Recording ----------------------------------------------------------------
 
@@ -171,39 +267,77 @@ async function stopRecording() {
   b.querySelector('span').textContent = 'Record';
   if (!blob) return;
   const stamp = new Date().toISOString().slice(0, 16).replace(/[T:]/g, '-');
-  const a = el('a', { href: URL.createObjectURL(blob), download: `In C - seed ${state.seed} - ${stamp}.wav` });
+  const label = mode === 'riley' ? 'Riley mode' : 'arranged';
+  const a = el('a', { href: URL.createObjectURL(blob), download: `In C - ${label} - seed ${state.seed} - ${stamp}.wav` });
   document.body.append(a);
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 60000);
 }
 
-function setPlaying(on) {
-  if (!on) dropUnplayedNotes();
-  const b = $('play');
-  b.classList.toggle('is-playing', on);
-  b.querySelector('span').textContent = on ? 'Pause' : 'Play';
-  b.querySelector('svg').innerHTML = on
-    ? '<rect x="3.5" y="2.5" width="3.2" height="11" rx="0.8"/><rect x="9.3" y="2.5" width="3.2" height="11" rx="0.8"/>'
-    : '<path d="M4 2.5v11l9-5.5z"/>';
-  $('stop').disabled = !on && cueBeat === 0;
-  $('playhead').hidden = !on;
-  if (!on) seq.anchorBeat = cueBeat;
-}
+// ---- Players (Riley mode) -------------------------------------------------------
 
-async function cueTo(beat) {
-  cueBeat = snap(Math.max(0, beat));
-  if (seq.playing) {
-    await seq.stop();
-    dropUnplayedNotes();
-    seq.play(cueBeat);
-  } else {
-    seq.anchorBeat = cueBeat;
-    $('stop').disabled = cueBeat === 0;
+const playerChips = [];
+const knobsByKey = {};
+
+function buildPlayers() {
+  $('players-section').hidden = false;
+  const r = state.riley;
+  const defs = [
+    ['count', 'Players', 1, 24, 1, v => String(v), 'How many players. Takes effect the next time the piece starts from the beginning.'],
+    ['minStay', 'Shortest stay', 5, 180, 5, v => `${v} s`, 'The least time a player spends on a module (rrand’s first number in the .scd).'],
+    ['maxStay', 'Longest stay', 5, 240, 5, v => `${v} s`, 'The most time a player spends on a module (rrand’s second number).'],
+    ['maxLead', 'Max lead', 1, 8, 1, v => `${v} mod`, 'How many modules ahead of the slowest player someone may get before waiting. Riley: “stay within 2 or 3 patterns of each other.”'],
+  ];
+  for (const [key, label, min, max, step, format, title] of defs) {
+    const value = key === 'count' ? r.players.length : r[key];
+    const k = knob({
+      label, min, max, step, value, format, title: `${title} Drag, scroll or use arrow keys; double-click to reset.`,
+      onInput: v => {
+        if (key === 'count') setPlayerCount(v);
+        else {
+          r[key] = v;
+          if (key === 'minStay' && r.maxStay < v) { r.maxStay = v; knobsByKey.maxStay.set(v, false); }
+          if (key === 'maxStay' && r.minStay > v) { r.minStay = v; knobsByKey.minStay.set(v, false); }
+        }
+        saveHash();
+      },
+    });
+    knobsByKey[key] = k;
+    $('players-knobs').append(k.el);
   }
+  renderPlayers();
 }
 
-const snap = b => Math.round(b * 4) / 4;   // to the pulse
+function setPlayerCount(n) {
+  const players = state.riley.players;
+  if (n < players.length) players.length = n;
+  const extra = rileyPlayers(n, rileyPool(), state.seed + n);
+  while (players.length < n) players.push(extra[players.length]);
+  renderPlayers();
+}
+
+function renderPlayers() {
+  const grid = $('player-grid');
+  grid.replaceChildren();
+  playerChips.length = 0;
+  state.riley.players.forEach((pl, p) => {
+    const select = el('select', { class: 'inst', 'aria-label': `SynthDef for player ${p + 1}` });
+    for (const name of instruments) select.append(el('option', { value: name }, name));
+    select.value = pl.instrument;
+    const where = el('span', { class: 'where' }, '–');
+    const chip = el('div', { class: 'player' }, el('b', {}, `P${p + 1}`), select, where);
+    chip.style.setProperty('--c', colorFor(pl.instrument));
+    select.addEventListener('change', () => {
+      pl.instrument = select.value;
+      chip.style.setProperty('--c', colorFor(pl.instrument));
+      saveHash();
+    });
+    grid.append(chip);
+    playerChips.push({ chip, where, select });
+  });
+  if (knobsByKey.count) knobsByKey.count.set(state.riley.players.length, false);
+}
 
 // ---- Permutation panel ------------------------------------------------------
 
@@ -218,7 +352,10 @@ function buildPermutationPanel() {
     ['octaves', 'Octave range', 0, 2, 1, v => (v === 0 ? 'off' : `±${v} oct`), 'How many octaves a module may be transposed. Following Riley, up is favored, and only modules with long notes (a dotted quarter or longer) may go down.'],
     ['pan', 'Pan spread', 0, 1, 0.05, v => (v === 0 ? 'centre' : `±${Math.round(v * 100)}`), 'How far from centre modules may be panned. The pulse stays centred.'],
   ];
+  // Riley mode has no fixed repeat counts, per-module SynthDefs or entry times.
+  const rileySkips = ['spread', 'shuffle', 'drift'];
   for (const [key, label, min, max, step, format, title] of defs) {
+    if (mode === 'riley' && rileySkips.includes(key)) continue;
     state.knobs[key] ??= DEFAULT_KNOBS[key];
     const k = knob({ label, min, max, step, value: state.knobs[key], format, title: `${title} Applies to the next permutation.`,
       onInput: v => { state.knobs[key] = v; saveHash(); } });
@@ -230,13 +367,12 @@ function buildPermutationPanel() {
   seedInput.value = state.seed;
   seedInput.addEventListener('change', () => {
     const s = Math.max(0, Math.floor(Number(seedInput.value) || 0));
-    applyPlan(s, permutePlan(model.modules, instruments, state.knobs, s));
+    applyPermutation(s);
   });
-  $('permute').addEventListener('click', () => {
-    const s = randomSeed();
-    applyPlan(s, permutePlan(model.modules, instruments, state.knobs, s));
+  $('permute').addEventListener('click', () => applyPermutation(randomSeed()));
+  $('reset').addEventListener('click', () => {
+    applyPlan(SCORE_SEED, scorePlan(modules, SCORE_SEED), mode === 'riley' ? scoreRiley(SCORE_SEED) : null);
   });
-  $('reset').addEventListener('click', () => applyPlan(SCORE_SEED, scorePlan(model.modules, SCORE_SEED)));
   $('share').addEventListener('click', async () => {
     saveHash(true);
     const btn = $('share');
@@ -250,9 +386,25 @@ function buildPermutationPanel() {
   });
 }
 
-function applyPlan(seed, plan) {
+function applyPermutation(seed) {
+  const plan = permutePlan(modules, instruments, state.knobs, seed);
+  let riley = null;
+  if (mode === 'riley') {
+    riley = { ...state.riley, players: rileyPlayers(state.riley.players.length, rileyPool(), seed) };
+    // Players bring their own SynthDefs; the rows keep theirs (the pulse's matters).
+    plan.forEach((p, i) => { p.instrument = state.plan[i].instrument; });
+  }
+  applyPlan(seed, plan, riley);
+}
+
+function applyPlan(seed, plan, riley) {
   state.seed = seed;
   state.plan = plan;
+  if (riley) {
+    state.riley = riley;
+    renderPlayers();
+    for (const key of ['minStay', 'maxStay', 'maxLead']) knobsByKey[key]?.set(riley[key], false);
+  }
   seedInput.value = seed;
   rows.forEach((r, i) => { r.refresh(); seq.resync(i); });
   pushGains();
@@ -265,7 +417,7 @@ function applyPlan(seed, plan) {
 
 function buildRows() {
   const container = $('rows');
-  model.modules.forEach((m, i) => {
+  modules.forEach((m, i) => {
     const p = () => state.plan[i];
 
     const num = el('div', { class: `num${m.number === 0 ? ' is-pulse' : ''}`, title: `${m.name} in the .scd` }, m.label);
@@ -320,7 +472,10 @@ function buildRows() {
     mute.addEventListener('click', () => { p().mute = !p().mute; refresh(); pushGains(); saveHash(); });
     solo.addEventListener('click', () => { p().solo = !p().solo; refresh(); pushGains(); saveHash(); });
     dice.addEventListener('click', () => {
-      Object.assign(p(), permuteModule(m, instruments, state.knobs, mulberry32(randomSeed())));
+      const rolled = permuteModule(m, instruments, state.knobs, mulberry32(randomSeed()));
+      // Riley mode keeps the module's SynthDef (players choose their own).
+      if (mode === 'riley') rolled.instrument = p().instrument;
+      Object.assign(p(), rolled);
       refresh();
       seq.resync(i);
       pushGains();
@@ -331,7 +486,8 @@ function buildRows() {
 
     const fill = el('div', { class: 'lane-fill' });
     const bar = el('div', { class: 'lane-bar' }, fill);
-    const lane = el('div', { class: 'lane', title: 'Click to start playback here' }, bar);
+    const dots = el('div', { class: 'lane-players' });
+    const lane = el('div', { class: 'lane', title: mode === 'riley' ? '' : 'Click to start playback here' }, bar, dots);
     lane.addEventListener('click', e => cueTo(beatFromX(e.clientX)));
 
     const row = el('div', { class: 'row' }, num, cell, select, octSelect, reps, vol, panKnob.el,
@@ -354,7 +510,7 @@ function buildRows() {
       solo.setAttribute('aria-pressed', String(q.solo));
     }
     refresh();
-    rows.push({ refresh, meter: mtr, bar, fill, row });
+    rows.push({ refresh, meter: mtr, bar, fill, row, dots, dotsKey: '' });
   });
 
   $('ruler').addEventListener('click', e => cueTo(beatFromX(e.clientX)));
@@ -389,16 +545,20 @@ function pushGains() {
 let totalBeats = 1;
 
 function layoutLanes() {
+  const ruler = $('ruler');
+  ruler.replaceChildren();
+  if (mode === 'riley') {
+    ruler.append(el('span', { style: 'left:0;transform:none' }, 'Players'));
+    return;
+  }
   totalBeats = Math.max(1, seq.endBeat());
   state.plan.forEach((p, i) => {
-    const m = model.modules[i];
+    const m = modules[i];
     rows[i].bar.style.left = `${(p.start / totalBeats) * 100}%`;
     rows[i].bar.style.width = `${Math.max(0.2, ((m.cellBeats * p.reps) / totalBeats) * 100)}%`;
   });
 
   // Minute marks on the ruler, at the current tempo.
-  const ruler = $('ruler');
-  ruler.replaceChildren();
   const secs = totalBeats / state.tempo;
   const px = ruler.getBoundingClientRect().width || 1;
   const step = [15, 30, 60, 120, 300, 600].find(s => (s / secs) * px >= 44) ?? 600;
@@ -429,13 +589,7 @@ function frame() {
   const now = performance.now();
   const beat = seq.beat;
 
-  model.modules.forEach((m, i) => {
-    rows[i].meter.update(levels[i] || 0, now);
-    const p = state.plan[i];
-    const span = m.cellBeats * p.reps;
-    const f = span > 0 ? Math.min(1, Math.max(0, (beat - p.start) / span)) : 0;
-    rows[i].fill.style.width = `${(f * 100).toFixed(2)}%`;
-  });
+  modules.forEach((m, i) => rows[i].meter.update(levels[i] || 0, now));
   masterMeters[0].update(levels[MAX_MODULES] || 0, now);
   masterMeters[1].update(levels[MAX_MODULES + 1] || 0, now);
 
@@ -444,18 +598,66 @@ function frame() {
     $('rec').querySelector('span').textContent = `${formatTime(recorder.seconds)} · ${mb.toFixed(0)} MB`;
   }
 
-  if (seq.playing) placeLine($('playhead'), beat);
-  placeLine($('cue'), cueBeat);
-
-  $('clock-time').textContent = formatTime(beat / state.tempo);
-  $('clock-sub').textContent = `of ${formatTime(totalBeats / state.tempo)} · beat ${beat.toFixed(1)}`;
+  if (mode === 'riley') {
+    frameRiley(beat);
+  } else {
+    modules.forEach((m, i) => {
+      const p = state.plan[i];
+      const span = m.cellBeats * p.reps;
+      const f = span > 0 ? Math.min(1, Math.max(0, (beat - p.start) / span)) : 0;
+      rows[i].fill.style.width = `${(f * 100).toFixed(2)}%`;
+    });
+    if (seq.playing) placeLine($('playhead'), beat);
+    placeLine($('cue'), cueBeat);
+    $('clock-time').textContent = formatTime(beat / state.tempo);
+    $('clock-sub').textContent = `of ${formatTime(totalBeats / state.tempo)} · beat ${beat.toFixed(1)}`;
+  }
 
   requestAnimationFrame(frame);
+}
+
+// Riley mode: where each player is, as dots on the module rows and in the
+// player panel.
+function frameRiley(beat) {
+  const where = seq.playerRows();
+  const byRow = new Map();
+  where.forEach((row, p) => {
+    if (row == null) return;
+    if (!byRow.has(row)) byRow.set(row, []);
+    byRow.get(row).push(p);
+  });
+  rows.forEach((r, i) => {
+    const players = byRow.get(i) || [];
+    const key = players.map(p => `${p}:${state.riley.players[p]?.instrument}`).join(',');
+    if (key === r.dotsKey) return;
+    r.dotsKey = key;
+    r.dots.replaceChildren(...players.map(p => {
+      const inst = state.riley.players[p]?.instrument;
+      const dot = el('i', { title: `Player ${p + 1} (${inst})` });
+      dot.style.setProperty('--pc', colorFor(inst));
+      return dot;
+    }));
+  });
+
+  playerChips.forEach((c, p) => {
+    const row = where[p];
+    const started = where.length > 0;
+    c.where.textContent = !started ? '–' : row == null ? 'done' : `on ${modules[row].label}`;
+    c.chip.classList.toggle('is-done', started && row == null);
+  });
+
+  $('clock-time').textContent = formatTime(beat / state.tempo);
+  const active = where.filter(r => r != null).map(r => Number(modules[r].label));
+  $('clock-sub').textContent = !where.length ? 'Riley mode'
+    : active.length ? `modules ${Math.min(...active)}–${Math.max(...active)}` : 'all players done';
 }
 
 function vizFrame() {
   const now = engine.now();
   while (notes.length && notes[0].end < now - 8) notes.shift();
+  const shown = mode === 'riley'
+    ? [state.plan[modules.findIndex(m => m.isPulse)]?.instrument, ...state.riley.players.map(p => p.instrument)].filter(Boolean)
+    : state.plan.map(p => p.instrument);
   return {
     now,
     playing: seq.playing,
@@ -463,7 +665,7 @@ function vizFrame() {
     tempo: seq.tempo,
     notes,
     gains: moduleGains(),
-    instruments: [...new Set(state.plan.map(p => p.instrument))],
+    instruments: [...new Set(shown)],
     colorFor,
     range: pitchRange(),
   };
@@ -473,7 +675,7 @@ function vizFrame() {
 function pitchRange() {
   let lo = Infinity;
   let hi = -Infinity;
-  model.modules.forEach((m, i) => {
+  modules.forEach((m, i) => {
     const shift = 12 * (state.plan[i].octave || 0);
     for (const e of m.cell) {
       if (e.rest) continue;
@@ -505,7 +707,7 @@ function showStatus(msg, isError = false, actionLabel, action) {
 let hashTimer = null;
 function saveHash(now = false) {
   clearTimeout(hashTimer);
-  const write = () => history.replaceState(null, '', `#${encodeState(state)}`);
+  const write = () => history.replaceState(null, '', `${location.pathname}?mode=${mode}#${encodeState(state)}`);
   if (now) write();
   else hashTimer = setTimeout(write, 300);
 }
