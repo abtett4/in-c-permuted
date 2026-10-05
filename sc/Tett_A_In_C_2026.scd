@@ -268,7 +268,7 @@ SynthDef(\burst, { |out, amp = 0.1, freq = 440, oct = 1|
 
 // Set up the 53 modules each with a bounded-random repeat number and the player variables
 (
-var song0, song1, song2, song3, song4, song5, song6, song7, song8, song9, song10, song11, song12, song13, song14, song15, song16, song17, song18, song19, song20, song21, song22, song23, song24, song25, song26, song27, song28, song29, song30, song31, song32, song33, song34, song35, song36, song37, song38, song39, song40, song41, song42, song43, song44, song45, song46, song47, song48, song49, song50, song51, song52, song53, offset, modules, nPlayers = 12, pos, tempo = 0.39, player, pulse, finished = 0, entrySpread = 45, entries;
+var song0, song1, song2, song3, song4, song5, song6, song7, song8, song9, song10, song11, song12, song13, song14, song15, song16, song17, song18, song19, song20, song21, song22, song23, song24, song25, song26, song27, song28, song29, song30, song31, song32, song33, song34, song35, song36, song37, song38, song39, song40, song41, song42, song43, song44, song45, song46, song47, song48, song49, song50, song51, song52, song53, offset, modules, nPlayers = 8, pos, tempo = 0.39, player, pulse, finished = 0, entrySpread = 15, entries;
 
 song0 = Pbind(
     \instrument, \harpsichord1,
@@ -791,18 +791,18 @@ Ptpar([
 // ]).play(TempoClock(0.39))
 // )
 
-// Claude Code's "Riley Mode" where each player repeats a module for 45-90s, waits if they get 3 modules ahead of the slowest player, and waits at module 53 until everyone has arrived
+// Claude Code's "Riley Mode" where each player repeats a module for 8-16 s (a ~10-minute performance), waits if they get 5 modules ahead of the slowest player, and waits at module 53 until everyone has arrived
 // Players come in one at a time over the first entrySpread seconds, and \bass is kept in the low register
 
 modules = [song1, song2, song3, song4, song5, song6, song7, song8, song9, song10, song11, song12, song13, song14, song15, song16, song17, song18, song19, song20, song21, song22, song23, song24, song25, song26, song27, song28, song29, song30, song31, song32, song33, song34, song35, song36, song37, song38, song39, song40, song41, song42, song43, song44, song45, song46, song47, song48, song49, song50, song51, song52, song53].collect { |pb| pb.patternpairs[3].list };
-pos = 0 ! nPlayers;   // which module each player is on
+pos = inf ! nPlayers;   // which module each player is on (inf until they come in, so late players don't hold others back)
 
 player = { |p, instrument|
     Prout({ |ev|
         ev = Event.silent(entries[p]).yield;   // wait for this player's entry
         modules.do { |cell, i|
             var beats = cell.sum { |e| e[1].value };
-            var reps = (rrand(45, 90) * tempo / beats).round.max(1);  // Riley: 45–90 s
+            var reps = (rrand(8, 16) * tempo / beats).round.max(1);  // 8-16 s per module, for a ~10-minute performance (Riley suggests 45-90 s)
             var notes = cell.reject { |e| e[1].isRest }.collect { |e| e[0] };
             var shift = 0;
             // Keep \bass low (E1-E3, MIDI 28-52) by moving the whole module by
@@ -814,7 +814,7 @@ player = { |p, instrument|
             pos[p] = i;
             while {
                 reps > 0
-                or: { i - pos.minItem >= 3 }                                   // don't race ahead
+                or: { i - pos.minItem >= 5 }                                   // don't race ahead
                 or: { (i == (modules.size - 1)) and: { pos.minItem < i } }     // wait at 53
             } {
                 ev = Pbind(\instrument, instrument, [\midinote, \dur], Pseq(cell.collect { |e| [e[0] - shift, e[1]] }, 1)).embedInStream(ev);

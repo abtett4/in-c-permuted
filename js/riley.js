@@ -6,8 +6,8 @@
 // On reaching a module a player decides to stay for minStay..maxStay seconds
 // (as a number of passes through the cell); before each further pass it keeps
 // going if it still has passes left, if it is maxLead or more modules ahead of
-// the slowest player, or if it is on the last module and someone hasn't
-// arrived yet. The pulse plays until every player has finished.
+// the slowest player who has come in, or if it is on the last module and
+// someone hasn't arrived yet. The pulse plays until every player has finished.
 //
 // Notes are scheduled ahead of time like the arranged sequencer, but always in
 // strict time order across all players (as SuperCollider's scheduler does), so
@@ -129,8 +129,10 @@ export class RileySequencer {
 
   newVoice(p, i, beat, slot) {
     // i: index into the module order; pos: the module it counts as being on
-    // for the lead rule; passes: how many times it has played this module.
-    return { p, i, pos: i, reps: null, passes: 0, ev: 0, beat, entry: beat, slot, done: false };
+    // for the lead rule (Infinity until it has come in, so players who haven't
+    // entered yet don't hold anyone back); passes: how many times it has
+    // played this module.
+    return { p, i, pos: Infinity, reps: null, passes: 0, ev: 0, beat, entry: beat, slot, done: false };
   }
 
   // Places the entries of players who haven't come in yet, evenly over
@@ -191,7 +193,7 @@ export class RileySequencer {
       const keep = new Set(players.slice(0, n));
       this.voices = this.voices.filter(v => v.isPulse || keep.has(v));
     } else {
-      const active = players.filter(v => !v.done);
+      const active = players.filter(v => !v.done && v.pos !== Infinity);
       const slowest = active.length ? Math.min(...active.map(v => v.pos)) : 0;
       const at = this.playing ? nextEighth(this.beatAt(this.horizonTime)) : nextEighth(this.anchorBeat);
       const pulse = this.voices.find(v => v.isPulse);
