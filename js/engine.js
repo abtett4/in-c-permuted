@@ -115,14 +115,16 @@ export class Engine {
 
   // { ugens, synths, groups, synthDefs } from /status, or null if no reply.
   serverStatus(timeout = 1000) {
+    if (!this.sonic) return Promise.resolve(null);
     return new Promise(resolve => {
-      const timer = setTimeout(() => { off(); resolve(null); }, timeout);
+      let timer = null;
       const off = this.sonic.on('in', m => {
         if (m[0] !== '/status.reply') return;
         clearTimeout(timer);
         off();
         resolve({ ugens: m[2], synths: m[3], groups: m[4], synthDefs: m[5] });
       });
+      timer = setTimeout(() => { off(); resolve(null); }, timeout);
       this.sonic.send('/status');
     });
   }
