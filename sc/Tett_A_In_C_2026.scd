@@ -177,18 +177,20 @@ SynthDef("harpsichord1", {
 
 // \ff by eli.fieldsteel, https://sccode.org/1-5eb, reworked for In C by Claude:
 // a gate envelope so each note ends; one pluck per note (the original
-// re-plucked six times a second, which sounded like a delay pedal); about
-// 10 dB louder; no glide (each note is a new synth); a softer pluck (its
-// noise burst was 8x and hit hard on every attack, now 2.5x and low-passed).
+// re-plucked six times a second, which sounded like a delay pedal); louder,
+// with brighter partials; no glide (each note is a new synth); a softer pluck
+// (its noise burst was 8x and hit hard on every attack, now 2.5x and low-passed).
 // oct = 1 lifts it an octave if it sounds thin on small speakers.
 SynthDef(\ff, { |out = 0, freq = 440, amp = 0.5, gate = 1, oct = 0|
 	var wn, sig;
 	freq = freq * (2 ** oct);
 	wn = Pluck.ar(LPF.ar(WhiteNoise.ar(2.5 ! 2), 4000), Impulse.ar(0), 1/10, 1/(freq * 0.6.midiratio), 4, 0.93);
 	wn = HPF.ar(wn, 300);
-	sig = (SinOsc.ar(freq * (1, 3..7)) * (1 / (1, 3..7)).pow(2.5)).sum;
+	// Odd partials falling off as 1/n (was 1/n^2.5, almost a pure sine), so
+	// there's tone above 400 Hz for small speakers to play.
+	sig = (SinOsc.ar(freq * (1, 3..7)) * (1 / (1, 3..7))).sum;
 	sig = Pan2.ar(sig, Rand(-0.5, 0.5));
-	sig = (sig + wn) * amp * 0.8;
+	sig = (sig + wn) * amp * 1.5;
 	sig = sig * EnvGen.kr(Env.asr(0.01, 1, 0.3), gate, doneAction: 2);
 	Out.ar(out, sig);
 }).add;
