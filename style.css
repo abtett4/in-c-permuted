@@ -166,6 +166,29 @@ main { padding: 18px 24px 8px; display: grid; grid-template-columns: minmax(0, 1
 .table.is-riley .lane-bar, .table.is-riley .playhead, .table.is-riley .cue { display: none; }
 .table.is-riley .lane, .table.is-riley .ruler { cursor: default; }
 
+/* ---- Audition ---------------------------------------------------------- */
+
+.audition { padding: 18px 20px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
+.aud-head { display: flex; justify-content: space-between; align-items: center; gap: 28px; }
+.aud-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.field { display: inline-flex; align-items: center; gap: 8px; color: var(--text-dim); font-size: 12.5px; }
+.field select { height: 36px; padding: 0 8px; border-radius: 8px; border: 1px solid var(--line-2); background: var(--bg); color: var(--text); font: 13px var(--mono); }
+.field select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.aud-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; margin-top: 14px; }
+.aud-card {
+  display: grid; grid-template-columns: auto 1fr auto; grid-template-rows: auto auto; align-items: center; gap: 4px 10px;
+  padding: 8px 10px; border: 1px solid var(--line-2); border-left: 4px solid var(--c); border-radius: 8px; background: var(--bg);
+}
+.aud-card.is-playing { border-color: var(--c); box-shadow: 0 0 0 1px var(--c) inset; }
+.aud-card .mini { grid-row: 1 / 3; width: 30px; height: 30px; }
+.aud-card .name { font: 600 13px var(--mono); color: var(--text); }
+.aud-card .peak { font: 12px var(--mono); color: var(--text-dim); text-align: right; font-variant-numeric: tabular-nums; }
+.aud-card .peak.hot { color: var(--meter-hi); }
+.aud-card .tags { grid-column: 2 / 4; display: flex; flex-wrap: wrap; gap: 4px; font-size: 11px; color: var(--text-dim); }
+.aud-card .tags span { padding: 1px 6px; border-radius: 4px; background: var(--panel-2); }
+.aud-card .tags span.warn { color: #ffd38a; }
+svg.cell { cursor: pointer; }
+
 /* ---- Knob --------------------------------------------------------------- */
 
 .knob { display: flex; flex-direction: column; align-items: center; width: 70px; user-select: none; }
@@ -278,7 +301,7 @@ footer strong { color: var(--text); font-weight: 600; }
 @media (max-width: 1180px) {
   .top { flex-wrap: wrap; gap: 14px 24px; position: static; }
   .transport { margin-left: 0; }
-  .perm, .players-head { flex-direction: column; align-items: flex-start; }
+  .perm, .players-head, .aud-head { flex-direction: column; align-items: flex-start; }
   .perm-knobs, .players-knobs { flex-wrap: wrap; }
 }
 
@@ -291,7 +314,7 @@ footer strong { color: var(--text); font-weight: 600; }
 @media (max-width: 640px) {
   .top, main { padding-left: 16px; padding-right: 16px; }
   .status { margin: 12px 16px 0; }
-  .modules, .perm, .players { padding: 14px 12px; }
+  .modules, .perm, .players, .audition { padding: 14px 12px; }
   /* Each row becomes two lines: the controls, then the level slider. */
   :root { --cols: 40px 1fr 58px 96px; }
   .table.is-riley { --cols: 40px 58px 34px 1fr auto; }

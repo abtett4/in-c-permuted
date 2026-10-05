@@ -71,6 +71,25 @@
       <div class="player-grid" id="player-grid"></div>
     </section>
 
+    <section class="audition" aria-labelledby="aud-h">
+      <div class="aud-head">
+        <div>
+          <h2 id="aud-h">Audition</h2>
+          <p class="hint">Hear one module played by each SynthDef, outside the piece, at the current tempo and that module's octave. Each card measures its SynthDef's peak level as it plays. Clicking a phrase in the module list picks that module here.</p>
+        </div>
+        <div class="aud-controls">
+          <label class="field">Module <select id="aud-module"></select></label>
+          <label class="field">Passes <select id="aud-passes"><option>1</option><option selected>2</option><option>3</option><option>4</option></select></label>
+          <button id="aud-all" class="btn btn-accent" type="button">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9-5.5z"/></svg>
+            <span>Play all, in turn</span>
+          </button>
+          <button id="aud-stop" class="btn" type="button" disabled>Stop</button>
+        </div>
+      </div>
+      <div class="aud-grid" id="aud-grid"></div>
+    </section>
+
     <section class="perm" aria-labelledby="perm-h">
       <div class="perm-main">
         <h2 id="perm-h">Permutation</h2>

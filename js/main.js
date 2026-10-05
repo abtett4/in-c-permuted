@@ -9,6 +9,7 @@ import {
 import { knob, meter, cellPreview, colorFor, dbamp, el, formatTime } from './ui.js';
 import { startViz } from './viz.js';
 import { Recorder } from './recorder.js';
+import { Audition, AUDITION_SLOT } from './audition.js';
 
 // Two forms of the piece, each read from its own .scd:
 //   riley:    players move through all 53 modules (the 2026 file's Riley mode)
@@ -19,6 +20,7 @@ const SCORE_SEED = 1964;
 const $ = id => document.getElementById(id);
 const engine = new Engine();
 const recorder = new Recorder(engine);
+const audition = new Audition(engine);
 
 let mode;             // 'riley' | 'arranged'
 let model;            // parsed .scd
@@ -49,7 +51,8 @@ async function init() {
   if (mode === 'arranged' && !model.arranged) throw new Error(`${FILES.arranged} doesn't end with a Ptpar(...).play.`);
   modules = mode === 'riley' ? model.riley.modules : model.arranged;
   if (!modules.length) throw new Error(`No modules found in ${FILES[mode]}.`);
-  if (modules.length > MAX_MODULES) throw new Error(`The mixer has ${MAX_MODULES} channels but the score has ${modules.length} modules.`);
+  // The last mixer channel is kept for the Audition panel.
+  if (modules.length > AUDITION_SLOT) throw new Error(`The mixer has room for ${AUDITION_SLOT} modules but the score has ${modules.length}.`);
   instruments = model.synthDefNames;
 
   const saved = location.hash.length > 1 ? decodeState(location.hash.slice(1), modules) : null;
@@ -80,6 +83,7 @@ async function init() {
 
   buildHeader();
   if (mode === 'riley') buildPlayers();
+  buildAudition();
   buildPermutationPanel();
   buildRows();
   layoutLanes();
@@ -88,7 +92,10 @@ async function init() {
   const pitches = modules.flatMap(m => m.cell.filter(e => !e.rest).flatMap(e => [].concat(e.midinote)));
   startViz($('viz'), vizFrame, [Math.min(...pitches), Math.max(...pitches)]);
 
-  engine.onLevels = vals => { levels = vals; };
+  engine.onLevels = vals => {
+    levels = vals;
+    audition.measure(vals[AUDITION_SLOT] || 0);
+  };
   requestAnimationFrame(frame);
 
   $('play').disabled = false;
@@ -96,7 +103,7 @@ async function init() {
   new ResizeObserver(layoutLanes).observe($('table'));
 
   // Handy for poking at things from the browser console.
-  window.inC = { engine, seq, recorder, model, modules, get state() { return state; } };
+  window.inC = { engine, seq, recorder, audition, model, modules, get state() { return state; } };
 }
 
 function hashMode() {
@@ -189,6 +196,7 @@ async function ensureEngine() {
 
 async function play() {
   if (!(await ensureEngine())) return;
+  if (audition.active) await audition.stop();
   seq.setTempo(state.tempo);
   if (mode === 'riley') {
     if (seq.paused) seq.resume();
@@ -339,6 +347,87 @@ function renderPlayers() {
   if (knobsByKey.count) knobsByKey.count.set(state.riley.players.length, false);
 }
 
+// ---- Audition -------------------------------------------------------------------
+
+const audCards = {};
+
+function buildAudition() {
+  const select = $('aud-module');
+  modules.forEach((m, i) => {
+    select.append(el('option', { value: i }, m.isPulse || m.number === 0 ? 'Pulse' : `Module ${m.label}`));
+  });
+  select.value = modules.findIndex(m => !m.isPulse && m.number !== 0);
+
+  for (const name of instruments) {
+    const play = el('button', { class: 'mini', type: 'button', 'aria-label': `Audition ${name}`, title: `Play the module with ${name}` });
+    play.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9-5.5z"/></svg>';
+    play.addEventListener('click', () => startAudition([name]));
+    const peak = el('span', { class: 'peak' }, '—');
+    const tags = el('div', { class: 'tags' });
+    const card = el('div', { class: 'aud-card' }, play, el('span', { class: 'name' }, name), peak, tags);
+    card.style.setProperty('--c', colorFor(name));
+    $('aud-grid').append(card);
+    audCards[name] = { card, peak, tags, tagKey: '' };
+  }
+
+  $('aud-all').addEventListener('click', () => startAudition(instruments));
+  $('aud-stop').addEventListener('click', () => audition.stop());
+}
+
+async function startAudition(list) {
+  if (!(await ensureEngine())) return;
+  if (seq.playing) await pause();
+  const i = Number($('aud-module').value);
+  await audition.stop();
+  audition.play({
+    module: modules[i],
+    instruments: list,
+    passes: Number($('aud-passes').value),
+    octave: state.plan[i].octave,
+    tempo: state.tempo,
+  });
+}
+
+// What's worth knowing when deciding whether a SynthDef earns its place:
+// who uses it, and whether it ignores pitch or holds notes until released.
+function auditionTags(name) {
+  const out = [];
+  if (mode === 'riley') {
+    const who = state.riley.players.map((p, i) => (p.instrument === name ? `P${i + 1}` : null)).filter(Boolean);
+    out.push(who.length ? [`players ${who.join(', ')}`] : ['no players', 'warn']);
+  } else {
+    const used = state.plan.map((p, i) => (p.instrument === name ? modules[i].label : null)).filter(Boolean);
+    out.push(used.length ? [`modules ${used.join(', ')}`] : ['unused', 'warn']);
+  }
+  const def = engine.defs[name];
+  if (def) {
+    if (!def.controls.has('freq') && !def.controls.has('midinote')) out.push(['ignores pitch', 'warn']);
+    if (def.controls.has('gate')) out.push(['held until released']);
+  }
+  return out;
+}
+
+function frameAudition() {
+  const playing = audition.current();
+  for (const name of instruments) {
+    const c = audCards[name];
+    c.card.classList.toggle('is-playing', name === playing);
+    const amp = audition.peaks[name];
+    if (amp != null) {
+      const db = amp > 0 ? 20 * Math.log10(amp) : -Infinity;
+      c.peak.textContent = db > -90 ? `peak ${db.toFixed(1)} dB` : 'silent';
+      c.peak.classList.toggle('hot', db > -1);
+    }
+    const tags = auditionTags(name);
+    const key = JSON.stringify(tags);
+    if (key !== c.tagKey) {
+      c.tagKey = key;
+      c.tags.replaceChildren(...tags.map(([text, cls]) => el('span', cls ? { class: cls } : {}, text)));
+    }
+  }
+  $('aud-stop').disabled = !audition.active;
+}
+
 // ---- Permutation panel ------------------------------------------------------
 
 const permKnobs = {};
@@ -422,6 +511,13 @@ function buildRows() {
 
     const num = el('div', { class: `num${m.number === 0 ? ' is-pulse' : ''}`, title: `${m.name} in the .scd` }, m.label);
     const cell = cellPreview(m);
+    const pick = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+    pick.textContent = 'Audition this module with each SynthDef';
+    cell.append(pick);
+    cell.addEventListener('click', () => {
+      $('aud-module').value = i;
+      $('aud-module').closest('section').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
 
     const select = el('select', { class: 'inst', 'aria-label': `SynthDef for module ${m.label}` });
     for (const name of instruments) select.append(el('option', { value: name }, name));
@@ -531,6 +627,7 @@ function moduleGains() {
   state.plan.forEach((p, i) => {
     g[i] = p.mute || (anySolo && !p.solo) ? 0 : dbamp(p.gainDb);
   });
+  g[AUDITION_SLOT] = 1;
   return g;
 }
 
@@ -597,6 +694,8 @@ function frame() {
     const mb = (recorder.frames * 4) / 1e6;
     $('rec').querySelector('span').textContent = `${formatTime(recorder.seconds)} · ${mb.toFixed(0)} MB`;
   }
+
+  frameAudition();
 
   if (mode === 'riley') {
     frameRiley(beat);

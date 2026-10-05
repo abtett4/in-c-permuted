@@ -28,7 +28,7 @@ A seed reproduces a permutation exactly, and **Copy link** shares the exact vers
 |---|---|
 | `sc/Tett_A_In_C_2026.scd` | The 2026 version: all 53 modules, 12 SynthDefs and Riley mode. The page **reads the score straight from this file** when it loads: every `Pbind`, the module order, the player count, the `[\a, \b].choose` instrument list, the `rrand(45, 90)` stay, the `>= 3` lead limit, the pulse and the `TempoClock` tempo. |
 | `sc/Tett_A_In_C.scd` | The 2019 arrangement, read the same way for the Arranged form: its `Pbind`s, `[a, b].choose` repeat counts, `Ppar` counts and `Ptpar` entry times. |
-| `sc/build_synthdefs.scd` | Compiles the SynthDefs **from `Tett_A_In_C_2026.scd`** to `synthdefs/*.scsyndef`, plus `inc_mixer` (per-module faders, pans and meters). |
+| `sc/build_synthdefs.scd` | Compiles the SynthDefs **from `Tett_A_In_C_2026.scd`** to `synthdefs/*.scsyndef`, plus the web mixer: `inc_strip` (per-module faders, pans and true-peak meters, 32 modules each) and `inc_master` (master level, limiter, master meter). |
 | `synthdefs/` | The compiled SynthDefs the browser loads into scsynth. |
 | `js/scd.js` | The small `.scd` reader. It handles the subset the piece uses, not all of sclang. |
 | `js/engine.js` | Boots SuperSonic and sends each note as a timestamped OSC bundle with the same arguments sclang's default event would send (e.g. `amp 0.1`, `freq` for `star`, `gate 0` after `dur × legato`). |
