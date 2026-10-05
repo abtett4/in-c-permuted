@@ -10,6 +10,7 @@ import { knob, meter, cellPreview, colorFor, dbamp, el, formatTime } from './ui.
 import { startViz } from './viz.js';
 import { Recorder } from './recorder.js';
 import { Audition, AUDITION_SLOT } from './audition.js';
+import { transposition } from './registers.js';
 
 // Two forms of the piece, each read from its own .scd:
 //   riley:    players move through all 53 modules (the 2026 file's Riley mode)
@@ -72,6 +73,7 @@ async function init() {
     riley: null,
   };
   if (mode === 'riley' && !state.riley) state.riley = scoreRiley(SCORE_SEED);
+  if (mode === 'riley') state.riley.entrySpread ??= model.riley.entrySpread;   // links from before entries existed
 
   seq = mode === 'riley'
     ? new RileySequencer(engine, modules, () => state.plan, () => ({ ...state.riley, seed: state.seed }))
@@ -130,6 +132,7 @@ function scoreRiley(seed) {
     minStay: r.minStay,
     maxStay: r.maxStay,
     maxLead: r.maxLead,
+    entrySpread: r.entrySpread,
     players: rileyPlayers(r.nPlayers, pool.length ? pool : instruments, seed),
   };
 }
@@ -302,6 +305,7 @@ function buildPlayers() {
     ['minStay', 'Shortest stay', 5, 180, 5, v => `${v} s`, 'The least time a player spends on a module (rrand’s first number in the .scd).'],
     ['maxStay', 'Longest stay', 5, 240, 5, v => `${v} s`, 'The most time a player spends on a module (rrand’s second number).'],
     ['maxLead', 'Max lead', 1, 8, 1, v => `${v} mod`, 'How many modules ahead of the slowest player someone may get before waiting. Riley: “stay within 2 or 3 patterns of each other.”'],
+    ['entrySpread', 'Entries over', 0, 120, 5, v => (v === 0 ? 'together' : `${v} s`), 'Players come in one at a time, in random order and on the eighth-note pulse, over this many seconds (entrySpread in the .scd). 0 starts everyone together. Takes effect the next time the piece starts from the beginning.'],
   ];
   for (const [key, label, min, max, step, format, title] of defs) {
     const value = key === 'count' ? r.players.length : r[key];
@@ -505,7 +509,7 @@ function applyPlan(seed, plan, riley) {
   if (riley) {
     state.riley = riley;
     renderPlayers();
-    for (const key of ['minStay', 'maxStay', 'maxLead']) knobsByKey[key]?.set(riley[key], false);
+    for (const key of ['minStay', 'maxStay', 'maxLead', 'entrySpread']) knobsByKey[key]?.set(riley[key], false);
   }
   seedInput.value = seed;
   rows.forEach((r, i) => { r.refresh(); seq.resync(i); });
@@ -731,10 +735,10 @@ function frame() {
 // Riley mode: where each player is, as dots on the module rows and in the
 // player panel.
 function frameRiley(beat) {
-  const where = seq.playerRows();
+  const where = seq.playerRows();   // row index, -1 = not in yet, null = finished
   const byRow = new Map();
   where.forEach((row, p) => {
-    if (row == null) return;
+    if (row == null || row < 0) return;
     if (!byRow.has(row)) byRow.set(row, []);
     byRow.get(row).push(p);
   });
@@ -754,16 +758,18 @@ function frameRiley(beat) {
   playerChips.forEach((c, p) => {
     const row = where[p];
     const started = where.length > 0;
-    c.where.textContent = !started ? '–' : row == null ? 'done' : `on ${modules[row].label}`;
-    c.chip.classList.toggle('is-done', started && row == null);
+    c.where.textContent = !started ? '–' : row == null ? 'done' : row < 0 ? 'waiting' : `on ${modules[row].label}`;
+    c.chip.classList.toggle('is-done', started && (row == null || row < 0));
   });
 
   $('clock-time').textContent = formatTime(beat / state.tempo);
-  const active = where.filter(r => r != null).map(r => Number(modules[r].label));
+  const active = where.filter(r => r != null && r >= 0).map(r => Number(modules[r].label));
   const lo = Math.min(...active);
   const hi = Math.max(...active);
+  const waiting = where.filter(r => r === -1).length;
   $('clock-sub').textContent = !where.length ? 'Riley mode'
-    : !active.length ? 'all players done'
+    : !active.length ? (waiting ? `${waiting} players to come in` : 'all players done')
+    : waiting ? `${active.length} of ${where.length} players in`
     : lo === hi ? `everyone on module ${lo}` : `modules ${lo}–${hi}`;
 }
 
@@ -786,18 +792,21 @@ function vizFrame() {
   };
 }
 
-// Lowest and highest notes the current plan can play, octaves included.
+// Lowest and highest notes the current plan can play, with octaves and the
+// register limits of SynthDefs like bass (registers.js) included.
 function pitchRange() {
   let lo = Infinity;
   let hi = -Infinity;
+  const players = mode === 'riley' ? [...new Set(state.riley.players.map(p => p.instrument))] : null;
   modules.forEach((m, i) => {
-    const shift = 12 * (state.plan[i].octave || 0);
-    for (const e of m.cell) {
-      if (e.rest) continue;
-      for (const n of [].concat(e.midinote)) {
-        lo = Math.min(lo, n + shift);
-        hi = Math.max(hi, n + shift);
-      }
+    if (m.lo == null) return;
+    const p = state.plan[i];
+    const shifts = players && !m.isPulse
+      ? players.map(inst => transposition(inst, m, p.octave))
+      : [transposition(p.instrument, m, p.octave)];
+    for (const s of shifts) {
+      lo = Math.min(lo, m.lo + s);
+      hi = Math.max(hi, m.hi + s);
     }
   });
   return [lo, hi];

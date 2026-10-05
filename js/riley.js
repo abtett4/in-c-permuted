@@ -1,6 +1,8 @@
 // Riley mode: the player logic from Tett_A_In_C_2026.scd, in JavaScript.
 //
-// Every player starts on module 1 and works through the modules in order.
+// Players enter one at a time, in random order, spread over the first
+// entrySpread seconds and aligned to the eighth-note pulse, so module 1 builds
+// up as a canon. Each then works through the modules in order.
 // On reaching a module a player decides to stay for minStay..maxStay seconds
 // (as a number of passes through the cell); before each further pass it keeps
 // going if it still has passes left, if it is maxLead or more modules ahead of
@@ -14,14 +16,28 @@
 
 import { mulberry32 } from './permute.js';
 import { makeTicker } from './sequencer.js';
+import { transposition } from './registers.js';
 
 const LOOKAHEAD = 0.4;
 const TICK_MS = 40;
 
+// When each player comes in, in beats: evenly spaced from 0 to `spread`, in a
+// random order, rounded to the eighth-note pulse (1/8 in the .scd's units).
+// The same rule as the `entries` line in the .scd (the random order differs:
+// SuperCollider shuffles with its own generator).
+export function entryBeats(n, spread, rand) {
+  const times = Array.from({ length: n }, (_, k) => Math.round((n > 1 ? (k * spread) / (n - 1) : 0) * 8) / 8);
+  for (let i = times.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [times[i], times[j]] = [times[j], times[i]];
+  }
+  return times;
+}
+
 export class RileySequencer {
   // modules: [pulse?, module 1, ..., module 53] (rows on the page)
   // getPlan(): per-row settings (octave etc.); getRiley(): { players: [{ instrument }],
-  //   minStay, maxStay, maxLead, seed }
+  //   minStay, maxStay, maxLead, entrySpread, seed }
   constructor(engine, modules, getPlan, getRiley) {
     this.engine = engine;
     this.modules = modules;
@@ -54,9 +70,11 @@ export class RileySequencer {
     this.tempo = tempo;
   }
 
-  // Which module row each player is on, for the page (null once finished).
+  // Which module row each player is on, for the page: null once finished,
+  // -1 while still waiting to come in.
   playerRows() {
-    return this.voices.filter(v => !v.isPulse).map(v => (v.done ? null : this.order[v.i]));
+    const beat = this.beat;
+    return this.voices.filter(v => !v.isPulse).map(v => (v.done ? null : v.entry > beat ? -1 : this.order[v.i]));
   }
 
   // Riley mode always starts from the beginning: where players are depends on
@@ -67,7 +85,8 @@ export class RileySequencer {
     this.players = r.players.length;
     this.positions = new Array(this.players).fill(0);
     this.finished = 0;
-    this.voices = r.players.map((pl, p) => ({ p, i: 0, reps: null, ev: 0, beat: 0, done: false }));
+    const entries = entryBeats(this.players, (r.entrySpread || 0) * this.tempo, this.rand);
+    this.voices = r.players.map((pl, p) => ({ p, i: 0, reps: null, ev: 0, beat: entries[p], entry: entries[p], done: false }));
     if (this.pulseIndex >= 0) this.voices.push({ isPulse: true, ev: 0, beat: 0, done: false });
     this.anchorBeat = 0;
     this.anchorTime = this.engine.now() + 0.1;
@@ -183,7 +202,7 @@ export class RileySequencer {
     const p = plan[row];
     const m = this.modules[row];
     const time = this.timeAt(beat);
-    const shift = 12 * (p.octave || 0);
+    const shift = transposition(instrument, m, p.octave);
     const midinote = Array.isArray(e.midinote) ? e.midinote.map(n => n + shift) : e.midinote + shift;
     this.engine.playNote({ time, instrument, midinote, dur: e.dur, tempo: this.tempo, moduleIndex: row, extras: m.extras });
     this.lastBeat = Math.max(this.lastBeat, beat + e.dur);

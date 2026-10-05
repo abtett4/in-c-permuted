@@ -268,7 +268,7 @@ SynthDef(\burst, { |out, amp = 0.1, freq = 440, oct = 1|
 
 // Set up the 53 modules each with a bounded-random repeat number and the player variables
 (
-var song0, song1, song2, song3, song4, song5, song6, song7, song8, song9, song10, song11, song12, song13, song14, song15, song16, song17, song18, song19, song20, song21, song22, song23, song24, song25, song26, song27, song28, song29, song30, song31, song32, song33, song34, song35, song36, song37, song38, song39, song40, song41, song42, song43, song44, song45, song46, song47, song48, song49, song50, song51, song52, song53, offset, modules, nPlayers = 12, pos, tempo = 0.39, player, pulse, finished = 0;
+var song0, song1, song2, song3, song4, song5, song6, song7, song8, song9, song10, song11, song12, song13, song14, song15, song16, song17, song18, song19, song20, song21, song22, song23, song24, song25, song26, song27, song28, song29, song30, song31, song32, song33, song34, song35, song36, song37, song38, song39, song40, song41, song42, song43, song44, song45, song46, song47, song48, song49, song50, song51, song52, song53, offset, modules, nPlayers = 12, pos, tempo = 0.39, player, pulse, finished = 0, entrySpread = 45, entries;
 
 song0 = Pbind(
     \instrument, \harpsichord1,
@@ -792,22 +792,32 @@ Ptpar([
 // )
 
 // Claude Code's "Riley Mode" where each player repeats a module for 45-90s, waits if they get 3 modules ahead of the slowest player, and waits at module 53 until everyone has arrived
+// Players come in one at a time over the first entrySpread seconds, and \bass is kept in the low register
 
 modules = [song1, song2, song3, song4, song5, song6, song7, song8, song9, song10, song11, song12, song13, song14, song15, song16, song17, song18, song19, song20, song21, song22, song23, song24, song25, song26, song27, song28, song29, song30, song31, song32, song33, song34, song35, song36, song37, song38, song39, song40, song41, song42, song43, song44, song45, song46, song47, song48, song49, song50, song51, song52, song53].collect { |pb| pb.patternpairs[3].list };
 pos = 0 ! nPlayers;   // which module each player is on
 
 player = { |p, instrument|
     Prout({ |ev|
+        ev = Event.silent(entries[p]).yield;   // wait for this player's entry
         modules.do { |cell, i|
             var beats = cell.sum { |e| e[1].value };
             var reps = (rrand(45, 90) * tempo / beats).round.max(1);  // Riley: 45–90 s
+            var notes = cell.reject { |e| e[1].isRest }.collect { |e| e[0] };
+            var shift = 0;
+            // Keep \bass low (E1-E3, MIDI 28-52) by moving the whole module by
+            // octaves, so its melody keeps its shape. Same rule as js/registers.js.
+            if (instrument == \bass) {
+                while { notes.maxItem - shift > 52 } { shift = shift + 12 };
+                while { (notes.minItem - shift < 28) and: { notes.maxItem - shift + 12 <= 52 } } { shift = shift - 12 };
+            };
             pos[p] = i;
             while {
                 reps > 0
                 or: { i - pos.minItem >= 3 }                                   // don't race ahead
                 or: { (i == (modules.size - 1)) and: { pos.minItem < i } }     // wait at 53
             } {
-                ev = Pbind(\instrument, instrument, [\midinote, \dur], Pseq(cell, 1)).embedInStream(ev);
+                ev = Pbind(\instrument, instrument, [\midinote, \dur], Pseq(cell.collect { |e| [e[0] - shift, e[1]] }, 1)).embedInStream(ev);
                 reps = reps - 1;
             };
         };
@@ -817,6 +827,11 @@ player = { |p, instrument|
 
 // add `finished = 0` to the var list; after each player's modules.do loop: finished = finished + 1;
 pulse = Pbind(\instrument, \harpsichord1, \midinote, 84, \dur, Pwhile({ finished < nPlayers }, Pseq([1/8], 1)));  // eighth-note pulse, high C
+
+// Players come in one at a time, in random order, spread over the first
+// entrySpread seconds and on the eighth-note pulse, so module 1 builds up as a
+// canon. Set entrySpread = 0 to start everyone together.
+entries = nPlayers.collect { |k| (k * entrySpread * tempo / (nPlayers - 1).max(1)).round(1/8) }.scramble;
 
 Ppar([pulse] ++ nPlayers.collect { |p| player.(p, [\pluck, \star, \starlet, \harpsichord1, \bass, \ff, \click, \burst, \highlong, \highshort, \envsine, \midsine
 ].choose) })

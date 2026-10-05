@@ -1,6 +1,8 @@
 // Audition: one module played by one SynthDef or by each in turn, outside the
 // piece, on a mixer channel of its own so its peak level can be measured.
 
+import { transposition } from './registers.js';
+
 export const AUDITION_SLOT = 63;   // the last mixer channel; the score never uses it
 const GAP = 0.8;                   // seconds of silence between SynthDefs
 
@@ -26,10 +28,10 @@ export class Audition {
   // Schedules everything up front as timestamped bundles.
   play({ module, instruments, passes, octave, tempo }) {
     this.segments = [];
-    const shift = 12 * (octave || 0);
     let t = this.engine.now() + 0.15;
     for (const instrument of instruments) {
       this.peaks[instrument] = 0;
+      const shift = transposition(instrument, module, octave);   // as it sounds in the piece
       const t0 = t;
       for (let pass = 0; pass < passes; pass++) {
         for (const e of module.cell) {

@@ -124,7 +124,7 @@ export function encodeState(state) {
   const compact = {
     v: 4,
     mo: state.mode,
-    r: state.riley ? [state.riley.minStay, state.riley.maxStay, state.riley.maxLead, state.riley.players.map(p => p.instrument)] : null,
+    r: state.riley ? [state.riley.minStay, state.riley.maxStay, state.riley.maxLead, state.riley.players.map(p => p.instrument), state.riley.entrySpread] : null,
     s: state.seed,
     k: [state.knobs.spread, state.knobs.shuffle, state.knobs.variance, state.knobs.drift, state.knobs.octaves, state.knobs.pan],
     t: state.tempo,
@@ -142,7 +142,7 @@ export function decodeState(str, modules) {
     if (![1, 2, 3, 4].includes(json.v) || !Array.isArray(json.m) || json.m.length !== modules.length) return null;
     return {
       mode: json.mo ?? 'arranged',
-      riley: json.r ? { minStay: json.r[0], maxStay: json.r[1], maxLead: json.r[2], players: json.r[3].map(instrument => ({ instrument })) } : null,
+      riley: json.r ? { minStay: json.r[0], maxStay: json.r[1], maxLead: json.r[2], players: json.r[3].map(instrument => ({ instrument })), entrySpread: json.r[4] } : null,
       seed: json.s,
       knobs: {
         spread: json.k[0], shuffle: json.k[1], variance: json.k[2], drift: json.k[3],

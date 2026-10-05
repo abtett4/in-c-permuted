@@ -103,6 +103,9 @@ function readVars(stmt, env) {
 function labelModules(modules) {
   modules.forEach((m, i) => {
     m.index = i;
+    const notes = m.cell.filter(e => !e.rest).flatMap(e => [].concat(e.midinote));
+    m.lo = notes.length ? Math.min(...notes) : null;   // the module's range,
+    m.hi = notes.length ? Math.max(...notes) : null;   // for registers.js
     const n = /(\d+)$/.exec(m.name);
     m.number = n ? Number(n[1]) : i;
     m.label = m.number === 0 ? 'Pulse' : String(m.number);
@@ -165,6 +168,9 @@ function readRiley(ppar, env, warnings) {
     minStay: stay ? stay[0] : RILEY_DEFAULTS.minStay,
     maxStay: stay ? stay[1] : RILEY_DEFAULTS.maxStay,
     maxLead: lead ?? RILEY_DEFAULTS.maxLead,
+    // Players come in one at a time over this many seconds (`var entrySpread`
+    // in the .scd); without it, everyone starts together.
+    entrySpread: typeof env.entrySpread === 'number' ? env.entrySpread : 0,
     hasPulse: !!(pulsePbind && pulsePbind.type === 'Pbind'),
     modules: labelModules(modules),
   };

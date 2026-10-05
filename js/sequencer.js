@@ -3,6 +3,8 @@
 // them in parallel. Notes are sent a little ahead of time as timestamped OSC
 // bundles, so timing is sample-accurate even if the page stutters.
 
+import { transposition } from './registers.js';
+
 const LOOKAHEAD = 0.4;   // seconds of notes sent ahead of time
 const TICK_MS = 40;
 
@@ -84,7 +86,7 @@ export class Sequencer {
         const ev = m.cell[cur.idx];
         if (!ev.rest && ev.dur > 0) {
           const time = this.timeAt(cur.beat);
-          const shift = 12 * (p.octave || 0);
+          const shift = transposition(p.instrument, m, p.octave);
           const midinote = Array.isArray(ev.midinote) ? ev.midinote.map(n => n + shift) : ev.midinote + shift;
           this.engine.playNote({
             time,
