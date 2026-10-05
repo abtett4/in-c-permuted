@@ -106,8 +106,10 @@ export function permuteModule(m, instruments, knobs, rand) {
     ? 0
     : Math.max(0, Math.round((m.start + (rand() * 2 - 1) * knobs.drift) * 8) / 8);
   const octave = pickOctave(m, knobs.octaves ?? 0, rand);
-  // The pulse stays centred.
-  const pan = m.start === 0 ? 0 : Math.round((rand() * 2 - 1) * (knobs.pan ?? 0) * 20) / 20;
+  // The pulse stays centred. (Not "enters on beat 0": in Riley mode every
+  // module does.)
+  const isPulse = m.isPulse || m.number === 0;
+  const pan = isPulse ? 0 : Math.round((rand() * 2 - 1) * (knobs.pan ?? 0) * 20) / 20;
   return { instrument, reps: Math.max(1, Math.round(finiteOr(base, 1) * factor)), gainDb, start, octave, pan };
 }
 

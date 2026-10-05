@@ -71,25 +71,6 @@
       <div class="player-grid" id="player-grid"></div>
     </section>
 
-    <section class="audition" aria-labelledby="aud-h">
-      <div class="aud-head">
-        <div>
-          <h2 id="aud-h">Audition</h2>
-          <p class="hint">Hear one module played by each SynthDef, outside the piece, at the current tempo and that module's octave. Each card measures its SynthDef's peak level as it plays. Clicking a phrase in the module list picks that module here.</p>
-        </div>
-        <div class="aud-controls">
-          <label class="field">Module <select id="aud-module"></select></label>
-          <label class="field">Passes <select id="aud-passes"><option>1</option><option selected>2</option><option>3</option><option>4</option></select></label>
-          <button id="aud-all" class="btn btn-accent" type="button">
-            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9-5.5z"/></svg>
-            <span>Play all, in turn</span>
-          </button>
-          <button id="aud-stop" class="btn" type="button" disabled>Stop</button>
-        </div>
-      </div>
-      <div class="aud-grid" id="aud-grid"></div>
-    </section>
-
     <section class="perm" aria-labelledby="perm-h">
       <div class="perm-main">
         <h2 id="perm-h">Permutation</h2>
@@ -102,7 +83,7 @@
           <label class="seed">Seed <input id="seed" type="number" min="0" max="999999" inputmode="numeric"></label>
           <button id="share" class="btn btn-ghost" title="Copy a link that opens this exact version">Copy link</button>
         </div>
-        <p class="hint" id="perm-hint">A permutation re-rolls each module's <code>[a, b].choose</code> repeat count, then the knobs push it further from the score. The same seed always gives the same permutation.</p>
+        <p class="hint" id="perm-hint">A permutation re-rolls each module's <code>[a, b].choose</code> repeat count, then the knobs push it further from the score. The knobs take effect on the next <strong>New permutation</strong> (or seed); they don't change the modules on their own. The same seed always gives the same permutation.</p>
       </div>
       <div class="perm-knobs" id="perm-knobs"></div>
     </section>
@@ -121,6 +102,25 @@
         <div class="playhead" id="playhead" hidden></div>
         <div class="cue" id="cue"></div>
       </div>
+    </section>
+
+    <section class="audition" aria-labelledby="aud-h">
+      <div class="aud-head">
+        <div>
+          <h2 id="aud-h">Audition</h2>
+          <p class="hint">A utility for comparing SynthDefs: hear one module played by each, outside the piece, at the current tempo and that module's octave. Each card measures its SynthDef's peak level as it plays. Clicking a phrase in the module list picks that module here.</p>
+        </div>
+        <div class="aud-controls">
+          <label class="field">Module <select id="aud-module"></select></label>
+          <label class="field">Passes <select id="aud-passes"><option>1</option><option selected>2</option><option>3</option><option>4</option></select></label>
+          <button id="aud-all" class="btn btn-accent" type="button">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9-5.5z"/></svg>
+            <span>Play all, in turn</span>
+          </button>
+          <button id="aud-stop" class="btn" type="button" disabled>Stop</button>
+        </div>
+      </div>
+      <div class="aud-grid" id="aud-grid"></div>
     </section>
   </main>
 

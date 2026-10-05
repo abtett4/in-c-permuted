@@ -83,7 +83,7 @@ async function init() {
   document.body.classList.toggle('is-riley', mode === 'riley');
   $('table').classList.toggle('is-riley', mode === 'riley');
   if (mode === 'riley') {
-    $('perm-hint').textContent = 'A permutation hands each player a new SynthDef from the .scd’s list, and the knobs vary each module’s level, octave and pan. The seed also decides every player’s choices, so the same seed gives the same performance.';
+    $('perm-hint').innerHTML = 'A permutation hands each player a new SynthDef from the .scd’s list, and the knobs vary each module’s level, octave and pan. The knobs take effect on the next <strong>New permutation</strong> (or seed); they don’t change the modules on their own. The seed also decides every player’s choices, so the same seed gives the same performance.';
     $('mod-hint').textContent = 'Dots show which module each player is on. Level, octave, pan, mute and solo apply to a module whoever is playing it.';
   }
 
