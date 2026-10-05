@@ -17,7 +17,7 @@
 // Every setting can change while the piece runs: the number of players,
 // their stays, the entries, the lead limit and the tempo.
 
-import { mulberry32 } from './permute.js';
+import { mulberry32, playerOctave } from './permute.js';
 import { makeTicker } from './sequencer.js';
 import { transposition } from './registers.js';
 
@@ -277,7 +277,7 @@ export class RileySequencer {
     const m = this.modules[row];
     const e = m.cell[v.ev];
     const instrument = (r.players[v.p] || r.players[r.players.length - 1]).instrument;
-    if (!e.rest && e.dur > 0) this.emit(row, e, v.beat, plan, instrument, v);
+    if (!e.rest && e.dur > 0) this.emit(row, e, v.beat, plan, instrument, v, this.octaveFor(v, row, r));
     v.beat += e.dur;
     v.ev = (v.ev + 1) % m.cell.length;
   }
@@ -311,13 +311,21 @@ export class RileySequencer {
     }
   }
 
+  // A player's octave on a module: fixed (-2..2), or "vary" (picked per
+  // module by the seed, within the octave range).
+  octaveFor(v, row, r) {
+    const setting = r.players[v.p]?.oct ?? 0;
+    if (setting !== 'vary') return setting;
+    return playerOctave(this.modules[row], r.octRange ?? 0, r.seed, v.p, row);
+  }
+
   // `v` is the player (none for the pulse): its notes go through its own
   // panner, which is pointed at this module's channel when it changes module.
-  emit(row, e, beat, plan, instrument, v = null) {
-    const p = plan[row];
+  // Players play in their own octave; the pulse uses its row's.
+  emit(row, e, beat, plan, instrument, v = null, octave = plan[row].octave) {
     const m = this.modules[row];
     const time = this.timeAt(beat);
-    const shift = transposition(instrument, m, p.octave);
+    const shift = transposition(instrument, m, octave);
     const midinote = Array.isArray(e.midinote) ? e.midinote.map(n => n + shift) : e.midinote + shift;
     if (v && v.routed !== row) {
       this.engine.routePlayer(v.p, row, time);

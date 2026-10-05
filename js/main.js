@@ -83,7 +83,7 @@ async function init() {
   }
 
   seq = mode === 'riley'
-    ? new RileySequencer(engine, modules, () => state.plan, () => ({ ...state.riley, seed: state.seed }))
+    ? new RileySequencer(engine, modules, () => state.plan, () => ({ ...state.riley, seed: state.seed, octRange: state.knobs.octaves ?? DEFAULT_KNOBS.octaves }))
     : new Sequencer(engine, modules, () => state.plan);
   seq.tempo = state.tempo;
   seq.onNote = n => notes.push(n);
@@ -92,8 +92,8 @@ async function init() {
   document.body.classList.toggle('is-riley', mode === 'riley');
   $('table').classList.toggle('is-riley', mode === 'riley');
   if (mode === 'riley') {
-    $('perm-hint').innerHTML = 'A permutation hands each player a new SynthDef from the .scd’s list and a new place in the stereo field (Pan spread sets how wide), and the knobs vary each module’s level and octave. The knobs take effect on the next <strong>New permutation</strong> (or seed); they don’t change the modules on their own. The seed also decides every player’s choices, so the same seed gives the same performance.';
-    $('mod-hint').textContent = 'Dots show which module each player is on. Level, octave, mute and solo apply to a module whoever is playing it; pan belongs to each player (in the Players panel).';
+    $('perm-hint').innerHTML = 'A permutation hands each player a new SynthDef from the .scd’s list, a new place in the stereo field (Pan spread sets how wide), and its own octave for each module (Octave range sets how far); Level variance varies the modules’ levels. The knobs take effect on the next <strong>New permutation</strong> (or seed); they don’t change the modules on their own. The seed also decides every player’s choices, so the same seed gives the same performance.';
+    $('mod-hint').textContent = 'Dots show which module each player is on. Level, mute and solo apply to a module whoever is playing it; octave and pan belong to each player (in the Players panel).';
   }
 
   buildHeader();
@@ -140,7 +140,8 @@ function scoreRiley(seed) {
     maxStay: r.maxStay,
     maxLead: r.maxLead,
     entrySpread: r.entrySpread,
-    players: rileyPlayers(r.nPlayers, pool.length ? pool : instruments, seed),
+    // As written: everyone in the module's own octave.
+    players: rileyPlayers(r.nPlayers, pool.length ? pool : instruments, seed).map(p => ({ ...p, oct: 0 })),
   };
 }
 
@@ -309,10 +310,10 @@ function buildPlayers() {
   const r = state.riley;
   const defs = [
     ['count', 'Players', 1, 24, 1, v => String(v), 'How many players. While the piece plays, new players join on the slowest player’s module.'],
-    ['minStay', 'Shortest stay', 5, 180, 5, v => `${v} s`, 'The least time a player spends on a module (rrand’s first number in the .scd).'],
-    ['maxStay', 'Longest stay', 5, 240, 5, v => `${v} s`, 'The most time a player spends on a module (rrand’s second number).'],
+    ['minStay', 'Shortest stay', 1, 180, 1, v => `${v} s`, 'The least time a player spends on a module (rrand’s first number in the .scd).'],
+    ['maxStay', 'Longest stay', 1, 240, 1, v => `${v} s`, 'The most time a player spends on a module (rrand’s second number).'],
     ['maxLead', 'Max lead', 1, 8, 1, v => `${v} mod`, 'How many modules ahead of the slowest player someone may get before waiting. Riley: “stay within 2 or 3 patterns of each other.”'],
-    ['entrySpread', 'Entries over', 0, 120, 5, v => (v === 0 ? 'together' : `${v} s`), 'Players come in one at a time, in random order and on the eighth-note pulse, over this many seconds (entrySpread in the .scd). 0 starts everyone together. While the piece plays, it re-spaces the players who haven’t come in yet.'],
+    ['entrySpread', 'Entries over', 0, 120, 1, v => (v === 0 ? 'together' : `${v} s`), 'Players come in one at a time, in random order and on the eighth-note pulse, over this many seconds (entrySpread in the .scd). 0 starts everyone together. While the piece plays, it re-spaces the players who haven’t come in yet.'],
   ];
   for (const [key, label, min, max, step, format, title] of defs) {
     const value = key === 'count' ? r.players.length : r[key];
@@ -341,7 +342,7 @@ function setPlayerCount(n) {
   const players = state.riley.players;
   if (n < players.length) players.length = n;
   const extra = rileyPlayers(n, rileyPool(), state.seed + n, state.knobs.pan);
-  while (players.length < n) players.push(extra[players.length]);
+  while (players.length < n) players.push({ ...extra[players.length], oct: 'vary' });
   seq.setPlayerCount();   // takes effect at once if the piece is playing or paused
   renderPlayers();
 }
@@ -355,12 +356,19 @@ function renderPlayers() {
     for (const name of instruments) select.append(el('option', { value: name }, name));
     select.value = pl.instrument;
     const where = el('span', { class: 'where' }, '–');
+    // Octave: "vary" picks one per module (within Octave range), or a fixed one.
+    const oct = el('select', { class: 'inst oct', 'aria-label': `Octave for player ${p + 1}`,
+      title: 'vary: a different octave for each module, by Riley’s rule (up favoured; down only on long notes), within Octave range. Or one octave for everything.' });
+    oct.append(el('option', { value: 'vary' }, 'vary'));
+    for (const o of [-2, -1, 0, 1, 2]) oct.append(el('option', { value: o }, o === 0 ? '0' : o > 0 ? `+${o}` : `−${-o}`));
+    oct.value = String(pl.oct ?? 0);
+    oct.addEventListener('change', () => { pl.oct = oct.value === 'vary' ? 'vary' : Number(oct.value); saveHash(); });
     const pan = knob({
       label: `Pan for player ${p + 1}`, min: -1, max: 1, step: 0.05, value: pl.pan ?? 0, mini: true, bipolar: true,
       format: fmtPan,
       onInput: v => { pl.pan = v; pushPans(); saveHash(); },
     });
-    const chip = el('div', { class: 'player' }, el('b', {}, `P${p + 1}`), select, pan.el, where);
+    const chip = el('div', { class: 'player' }, el('b', {}, `P${p + 1}`), select, oct, pan.el, where);
     chip.style.setProperty('--c', colorFor(pl.instrument));
     select.addEventListener('change', () => {
       pl.instrument = select.value;
@@ -513,7 +521,8 @@ function applyPermutation(seed) {
   const plan = permutePlan(modules, instruments, state.knobs, seed);
   let riley = null;
   if (mode === 'riley') {
-    riley = { ...state.riley, players: rileyPlayers(state.riley.players.length, rileyPool(), seed, state.knobs.pan) };
+    // Each player gets a new SynthDef and pan, and picks its own octave per module.
+    riley = { ...state.riley, players: rileyPlayers(state.riley.players.length, rileyPool(), seed, state.knobs.pan).map(p => ({ ...p, oct: 'vary' })) };
     // Players bring their own SynthDefs; the rows keep theirs (the pulse's matters).
     plan.forEach((p, i) => { p.instrument = state.plan[i].instrument; });
   }
@@ -821,12 +830,14 @@ function vizFrame() {
 function pitchRange() {
   let lo = Infinity;
   let hi = -Infinity;
-  const players = mode === 'riley' ? [...new Set(state.riley.players.map(p => p.instrument))] : null;
+  const range = state.knobs.octaves ?? DEFAULT_KNOBS.octaves;
   modules.forEach((m, i) => {
     if (m.lo == null) return;
     const p = state.plan[i];
-    const shifts = players && !m.isPulse
-      ? players.map(inst => transposition(inst, m, p.octave))
+    // Riley mode: any player may play any module, in its own octave(s).
+    const shifts = mode === 'riley' && !m.isPulse
+      ? state.riley.players.flatMap(pl => (pl.oct === 'vary' ? allowedOctaves(m, range) : [pl.oct ?? 0])
+        .map(o => transposition(pl.instrument, m, o)))
       : [transposition(p.instrument, m, p.octave)];
     for (const s of shifts) {
       lo = Math.min(lo, m.lo + s);

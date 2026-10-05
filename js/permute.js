@@ -44,7 +44,7 @@ export function allowedOctaves(m, range, { rileyRule = true } = {}) {
   return out.length ? out : [0];
 }
 
-function pickOctave(m, range, rand) {
+export function pickOctave(m, range, rand) {
   const options = allowedOctaves(m, Math.round(range));
   const weights = options.map(o => (o === 0 ? OCTAVE_WEIGHTS.stay : o > 0 ? OCTAVE_WEIGHTS.up : OCTAVE_WEIGHTS.down));
   let r = rand() * weights.reduce((a, b) => a + b, 0);
@@ -82,6 +82,16 @@ export function rileyPlayers(n, pool, seed, spread = DEFAULT_KNOBS.pan) {
   const players = Array.from({ length: n }, () => ({ instrument: pick(rand, pool) }));
   playerPans(n, spread, rand).forEach((pan, i) => { players[i].pan = pan; });
   return players;
+}
+
+// Riley mode, a player set to "vary": the octave it plays module `row` in.
+// Picked by the same rule as module octaves (up favoured; down only for
+// modules with long notes; within `range`), and fixed by the seed, the player
+// and the module, so a seed still reproduces a performance.
+export function playerOctave(m, range, seed, player, row) {
+  const rand = mulberry32((Math.imul(seed, 7919) + Math.imul(player + 1, 104729) + Math.imul(row + 1, 31337)) >>> 0);
+  rand(); rand();   // let the generator move off its starting point
+  return pickOctave(m, range, rand);
 }
 
 export function playerPans(n, spread, rand) {
@@ -138,7 +148,7 @@ export function encodeState(state) {
   const compact = {
     v: 4,
     mo: state.mode,
-    r: state.riley ? [state.riley.minStay, state.riley.maxStay, state.riley.maxLead, state.riley.players.map(p => p.instrument), state.riley.entrySpread, state.riley.players.map(p => p.pan ?? 0)] : null,
+    r: state.riley ? [state.riley.minStay, state.riley.maxStay, state.riley.maxLead, state.riley.players.map(p => p.instrument), state.riley.entrySpread, state.riley.players.map(p => p.pan ?? 0), state.riley.players.map(p => p.oct ?? 0)] : null,
     s: state.seed,
     k: [state.knobs.spread, state.knobs.shuffle, state.knobs.variance, state.knobs.drift, state.knobs.octaves, state.knobs.pan],
     t: state.tempo,
@@ -156,7 +166,7 @@ export function decodeState(str, modules) {
     if (![1, 2, 3, 4].includes(json.v) || !Array.isArray(json.m) || json.m.length !== modules.length) return null;
     return {
       mode: json.mo ?? 'arranged',
-      riley: json.r ? { minStay: json.r[0], maxStay: json.r[1], maxLead: json.r[2], players: json.r[3].map((instrument, i) => ({ instrument, pan: json.r[5]?.[i] })), entrySpread: json.r[4] } : null,
+      riley: json.r ? { minStay: json.r[0], maxStay: json.r[1], maxLead: json.r[2], players: json.r[3].map((instrument, i) => ({ instrument, pan: json.r[5]?.[i], oct: json.r[6]?.[i] ?? 0 })), entrySpread: json.r[4] } : null,
       seed: json.s,
       knobs: {
         spread: json.k[0], shuffle: json.k[1], variance: json.k[2], drift: json.k[3],
