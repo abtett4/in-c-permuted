@@ -404,7 +404,7 @@ async function startAudition(list) {
 function auditionTags(name) {
   const out = [];
   if (candidates.includes(name)) {
-    out.push(['proposed fix, not in the piece', 'proposed']);
+    out.push([name.endsWith('_old') ? 'previous version, for comparison' : 'proposed fix, not in the piece', 'proposed']);
   } else if (mode === 'riley') {
     const who = state.riley.players.map((p, i) => (p.instrument === name ? `P${i + 1}` : null)).filter(Boolean);
     out.push(who.length ? [`players ${who.join(', ')}`] : ['no players', 'warn']);

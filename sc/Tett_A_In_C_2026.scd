@@ -151,7 +151,10 @@ SynthDef(\starlet, { arg out=0, amp=5.0, gate=1, pan=0, spread=0.8, midinote=30,
     sig1 = sig * ( sig/(sig+1.1)*50 * env1 ).clip(0.5);
     sig = SelectX.ar(\mix.kr(0.5), [sig, sig1]);
     sig = sig * 2;
-    sig = sig * EnvGen.ar(\adsr.kr(Env.adsr(1.01,0.1,1,1.1)),gate,doneAction:doneAction);
+    // Soft saturation adds harmonics small speakers can play, and a 0.15 s
+    // fade-in (was 1.01 s) lets short notes reach full level.
+    sig = (sig * 4).tanh;
+    sig = sig * EnvGen.ar(\adsr.kr(Env.adsr(0.15,0.1,1,1.1)),gate,doneAction:doneAction);
     // sig = sig /10;
     sig = Splay.ar(sig, spread, amp, pan);
     Out.ar(out, sig);
@@ -168,84 +171,86 @@ SynthDef("harpsichord1", {
     Out.ar(out, Pan2.ar(snd, pan));
 }).add;
 
-// \ff by eli.fieldsteel, https://sccode.org/1-5eb with a minor doneAction fix by Claude
-	SynthDef(\ff, {
-		arg freq=440, freqtime=0.2, freqcurve=(-50), amp=0.5, out=0, gate=1;
-		var wn, wn_env, wn_fenv, sig, trig;
-		trig = Impulse.ar(6);
-		wn = WhiteNoise.ar(8!2);
-		wn = Pluck.ar(wn, trig, 1/10, 1/(freq*0.6.midiratio), 4, 0.93);
-		wn = HPF.ar(wn, 300);
-		sig = SinOsc.ar(freq.varlag(freqtime, freqcurve) * (1,3..7));
-		sig = sig * (1/(1,3..7)).pow(2.5);
-		sig = sig.sum;
-		sig = Pan2.ar(sig, {TRand.ar(-0.5,0.5,trig)}!4).sum * 0.5;
-		sig = sig + wn;
-		sig = sig * amp * 0.13;
-    sig = sig * EnvGen.kr(Env.asr(0.01, 1, 0.3), gate, doneAction: 2);
-		Out.ar(out, sig);
-	}).add;
+// \ff by eli.fieldsteel, https://sccode.org/1-5eb, reworked for In C by Claude:
+// a gate envelope so each note ends; one pluck per note (the original
+// re-plucked six times a second, which sounded like a delay pedal); about
+// 10 dB louder; no glide (each note is a new synth). oct = 1 lifts it an
+// octave if it sounds thin on small speakers.
+SynthDef(\ff, { |out = 0, freq = 440, amp = 0.5, gate = 1, oct = 0|
+	var wn, sig;
+	freq = freq * (2 ** oct);
+	wn = Pluck.ar(WhiteNoise.ar(8 ! 2), Impulse.ar(0), 1/10, 1/(freq * 0.6.midiratio), 4, 0.93);
+	wn = HPF.ar(wn, 300);
+	sig = (SinOsc.ar(freq * (1, 3..7)) * (1 / (1, 3..7)).pow(2.5)).sum;
+	sig = Pan2.ar(sig, Rand(-0.5, 0.5));
+	sig = (sig + wn) * amp * 0.8;
+	sig = sig * EnvGen.kr(Env.asr(0.01, 1, 0.3), gate, doneAction: 2);
+	Out.ar(out, sig);
+}).add;
 
-// ~coeff through \burst by gosub, https://sccode.org/1-5i2
+// \click through \burst after gosub, https://sccode.org/1-5i2, reworked for
+// In C by Claude. gosub wrote them as fixed high-pitched sounds (1-12.5 kHz);
+// following In C's notes they became pure sines around 175-470 Hz, which
+// small speakers barely reproduce. `oct` lifts them by octaves (oct = 2 is
+// two octaves up), which Riley's directions allow.
 
-~coeff = {|freq| exp(-2pi * (freq * SampleDur.ir))};
-
-SynthDef(\click, { |out, amp=0.1, freq=10000|
-	var snd;
-    snd = SinOsc.ar(freq);
-	snd = Impulse.ar(0);
-	snd = OnePole.ar(snd, ~coeff.(Rand(500, 10000)));
+// A pitched click: Ringz rings briefly at the note, like a woodblock. (The
+// original was a single-sample impulse, under a millisecond, with no pitch.)
+SynthDef(\click, { |out, amp = 0.1, freq = 440, oct = 2|
+	var snd = Ringz.ar(Impulse.ar(0), freq * (2 ** oct), 0.06);
+	snd = snd * amp;
 	DetectSilence.ar(snd, doneAction: Done.freeSelf);
-	snd = snd * amp;
-	snd = Pan2.ar(snd, pos: Rand(-1, 1));
-	Out.ar(out, snd);
+	Out.ar(out, Pan2.ar(snd, Rand(-1, 1)));
 }).add;
 
-SynthDef(\highshort, { |out, amp=0.1, freq=10000|
-	var snd;
-	snd = SinOsc.ar(freq);
-	snd = snd * EnvGen.ar(Env([0,1,1,0], [0.001, 0.010, 0.010]), doneAction: Done.freeSelf);
-	snd = snd * amp;
-	Out.ar(out, snd!2);
+// A 0.12 s ping two octaves up (the original's 21 ms is about five cycles of a
+// low note, which reads as a thump).
+SynthDef(\highshort, { |out, amp = 0.1, freq = 440, oct = 2|
+	var snd = SinOsc.ar(freq * (2 ** oct));
+	snd = snd * EnvGen.ar(Env.perc(0.002, 0.12), doneAction: Done.freeSelf);
+	Out.ar(out, (snd * amp) ! 2);
 }).add;
 
-
-SynthDef(\envsine, { |out, amp=0.1, freq=1174|
-	var snd, noi;
-	snd = SinOsc.ar(freq);
+// One octave up with a quiet 3rd harmonic; gosub's envelope and reverb.
+SynthDef(\envsine, { |out, amp = 0.1, freq = 440, oct = 1|
+	var f = freq * (2 ** oct);
+	var snd = SinOsc.ar(f) + (SinOsc.ar(f * 3) * 0.15);
 	snd = snd * EnvGen.ar(Env.linen(0.010, 0.200, 0.500));
-	snd = snd;
 	snd = FreeVerb2.ar(snd, snd, mix: 0.5, room: 0.7, damp: 0.2);
 	snd = snd * amp;
 	DetectSilence.ar(snd, doneAction: Done.freeSelf);
 	Out.ar(out, snd);
 }).add;
 
-SynthDef(\highlong, { |out, amp=0.1, freq=12544|
-	var snd;
-	snd = SinOsc.ar(freq);
-	snd = snd * EnvGen.ar(Env.linen(0.001, 0.400, 0.150), doneAction: Done.freeSelf);
-	snd = snd * amp;
-	Out.ar(out, snd!2);
+// Two octaves up with a quiet 2nd harmonic, and a 5 ms attack so it starts
+// without a click.
+SynthDef(\highlong, { |out, amp = 0.1, freq = 440, oct = 2|
+	var f = freq * (2 ** oct);
+	var snd = SinOsc.ar(f) + (SinOsc.ar(f * 2) * 0.25);
+	snd = snd * EnvGen.ar(Env.linen(0.005, 0.400, 0.150), doneAction: Done.freeSelf);
+	Out.ar(out, (snd * amp) ! 2);
 }).add;
 
+// Driven hard into its clipper (x10; it used to barely touch it), which makes
+// it nearly square, adding odd harmonics small speakers can play; a low-pass
+// takes off the harshest edge.
 SynthDef(\midsine, { |out, amp=0.1, freq=3136|
 	var snd, env;
 	snd = SinOsc.ar(freq);
-	snd = Clip.ar(snd, -0.9, 0.9);
+	snd = Clip.ar(snd * 10, -0.9, 0.9);
+	snd = LPF.ar(snd, (freq * 8).min(16000));
 	env=Env.linen(0.005, 0.050, 0.010);
 	snd = snd * EnvGen.ar(env, doneAction: Done.freeSelf);
 	snd = snd * amp;
 	Out.ar(out, snd!2);
 }).add;
 
-SynthDef(\burst, { |out, amp=0.1, freq=10000|
-	var snd;
-    snd = SinOsc.ar(freq);
-	snd = WhiteNoise.ar(mul: -7.dbamp);
-	snd = snd * EnvGen.ar(Env.linen(0.001, 0.400, 0.010), doneAction: Done.freeSelf);
-	snd = snd * amp;
-	Out.ar(out, snd!2);
+// Noise tuned to the note, with a 0.25 s decay (the original was plain white
+// noise for 0.4 s on every note, whatever the pitch).
+SynthDef(\burst, { |out, amp = 0.1, freq = 440, oct = 1|
+	var snd = BPF.ar(WhiteNoise.ar, freq * (2 ** oct), 0.05) * 40;   // a narrow band passes little noise, so it needs gain
+	snd = snd * EnvGen.ar(Env.perc(0.005, 0.25), doneAction: Done.freeSelf);
+	Out.ar(out, (snd * amp) ! 2);
 }).add;
 
 )

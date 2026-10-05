@@ -68,6 +68,6 @@ The audio is generated on whichever computer has the page open. If that person s
 ## Credits and licenses
 
 - *In C* © Terry Riley, 1964.
-- *pluck* is after John Drumheller's Karplus-Strong example. *star* is from [sccode.org/1-522](https://sccode.org/1-522). *ff* is by Eli Fieldsteel ([sccode.org/1-5eb](https://sccode.org/1-5eb)). *click*, *highshort*, *envsine*, *highlong*, *midsine* and *burst* are by gosub ([sccode.org/1-5i2](https://sccode.org/1-5i2)).
+- *pluck* is after John Drumheller's Karplus-Strong example. *star* is from [sccode.org/1-522](https://sccode.org/1-522). *ff* is after Eli Fieldsteel ([sccode.org/1-5eb](https://sccode.org/1-5eb)). *click*, *highshort*, *envsine*, *highlong*, *midsine* and *burst* are after gosub ([sccode.org/1-5i2](https://sccode.org/1-5i2)). All seven were reworked to follow In C's pitches and be audible on small speakers; the comments in `Tett_A_In_C_2026.scd` say what changed.
 - SuperSonic (scsynth + clockwork) is AGPL-3.0-or-later. It's loaded from the jsDelivr/unpkg CDN at a pinned version (0.88.0).
 - [p5.js](https://p5js.org) is LGPL-2.1.
