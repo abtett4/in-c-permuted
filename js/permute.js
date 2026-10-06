@@ -106,10 +106,11 @@ export function playerPans(n, spread, rand) {
 // The piece exactly as written (the .choose calls still roll, seeded).
 export function scorePlan(modules, seed) {
   const rand = mulberry32(seed);
+  const pulseRand = mulberry32((seed ^ 0x9015e) >>> 0);   // its own, so nothing else shifts
   return modules.map(m => ({
     instrument: m.instrument,
     reps: finiteOr(pick(rand, m.seqChoices) * pick(rand, m.pparChoices), 1),
-    gainDb: 0,
+    gainDb: m.gainRange ? inRange(m.gainRange, pulseRand()) : 0,
     start: m.start,
     octave: 0,
     pan: 0,
@@ -118,13 +119,21 @@ export function scorePlan(modules, seed) {
   }));
 }
 
+// A level within [lo, hi] dB, to the nearest half dB.
+function inRange([lo, hi], x) {
+  return Math.round((lo + x * (hi - lo)) * 2) / 2;
+}
+
 export function permuteModule(m, instruments, knobs, rand) {
   const base = pick(rand, m.seqChoices) * pick(rand, m.pparChoices);
   const factor = 1 + (rand() * 2 - 1) * knobs.spread;
   const instrument = rand() < knobs.shuffle && instruments.length
     ? pick(rand, instruments)
     : m.instrument;
-  const gainDb = Math.round((rand() * 2 - 1) * knobs.variance * 2) / 2;
+  // A module with its own level range (the pulse, from pulseDb in the .scd)
+  // stays within it; the others vary by ± Level variance.
+  const g = rand();
+  const gainDb = m.gainRange ? inRange(m.gainRange, g) : Math.round((g * 2 - 1) * knobs.variance * 2) / 2;
   // The pulse (anything entering on beat 0) keeps its place.
   const start = m.start === 0
     ? 0

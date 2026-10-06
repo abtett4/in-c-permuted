@@ -151,7 +151,12 @@ function readRiley(ppar, env, warnings) {
 
   const modules = [];
   if (pulsePbind && pulsePbind.type === 'Pbind') {
-    modules.push(readPulse(pulsePbind));
+    const pulse = readPulse(pulsePbind);
+    // The pulse's level range in dB (`pulseDb = [lo, hi]`), so it sits under
+    // the players. Without it, it varies like any module.
+    const db = env.pulseDb;
+    if (Array.isArray(db) && db.length === 2 && db.every(x => typeof x === 'number')) pulse.gainRange = [Math.min(...db), Math.max(...db)];
+    modules.push(pulse);
   } else {
     warnings.push('Riley mode: no pulse Pbind found before ++; playing without a pulse.');
   }
